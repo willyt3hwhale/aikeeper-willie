@@ -15,9 +15,12 @@ Read these files on every iteration:
 ### First Iteration?
 If log.md NEXT UP is empty or files don't exist:
 1. Read idea.md thoroughly
-2. Create todo.md with initial tasks from the vision
-3. Set NEXT UP to first concrete task
-4. Commit and end iteration
+2. Research: explore codebase, understand constraints, identify unknowns
+3. Create todo.md with informed tasks (not just copied from idea.md)
+4. Set NEXT UP to first concrete task
+5. Commit and end iteration
+
+The first iteration is always research → planning. Don't rush to implementation.
 
 ## 1. Pick Task
 - Check NEXT UP in log.md → this is your task
