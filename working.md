@@ -2,10 +2,13 @@
 
 ## 0. Orient (30 seconds)
 ```
+Check: git status                   → repo exists? if not: git init
 Check: .claude/ralph-loop.local.md  → iteration #, max, promise
 Check: git log --oneline -3         → what just happened?
 Check: git diff HEAD~1 --stat       → what files changed?
 ```
+
+Always use a venv for Python packages (`python -m venv .venv && source .venv/bin/activate`).
 
 Read these files on every iteration:
 1. **idea.md** - project vision (skim after iteration 1)
@@ -44,10 +47,10 @@ A task is "ready" if:
 
 **If too big → SPLIT IT**
 1. Break into sub-tasks as checkboxes under the parent item
-2. Each sub-task should be atomic and ready
+2. Sub-tasks can themselves be split further (nest as needed)
 3. Commit the updated todo.md
 4. Set NEXT UP to first sub-task
-5. Done - let next iteration implement
+5. Done - let next iteration evaluate and possibly split again
 
 **If ready → DO IT**
 1. Implement the task
