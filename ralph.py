@@ -55,15 +55,21 @@ def get_next_task(tasks):
     """Find next task to work on.
 
     Priority:
-    1. Pending tasks (direct work available)
-    2. Split tasks with all children complete (needs verification)
+    1. Active tasks (resume interrupted work)
+    2. Pending tasks (new work available)
+    3. Split tasks with all children complete (needs verification)
     """
-    # First: any pending tasks
+    # First: resume any active task (crash recovery)
+    for task in tasks:
+        if task.get('status') == 'active':
+            return task, 'work'
+
+    # Second: any pending tasks
     for task in tasks:
         if task.get('status') == 'pending':
             return task, 'work'
 
-    # Second: split tasks ready for verification
+    # Third: split tasks ready for verification
     for task in tasks:
         if task.get('status') == 'split':
             children = get_children(tasks, task['id'])
@@ -147,9 +153,12 @@ def slugify(text):
     return ''.join(c for c in slug if c.isalnum() or c == '-')[:30]
 
 def create_branch(task_id, title):
-    """Create and checkout task branch."""
+    """Create and checkout task branch. If it exists, just check it out."""
     branch = f"task/{task_id}-{slugify(title)}"
-    git('checkout', '-b', branch)
+    code, _ = git('checkout', '-b', branch)
+    if code != 0:
+        # Branch exists, just check it out
+        git('checkout', branch)
     return branch
 
 def squash_merge(branch, task_id, title):
