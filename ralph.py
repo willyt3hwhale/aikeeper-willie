@@ -176,77 +176,103 @@ def squash_merge(branch, task_id, title):
 
 # --- Claude execution ---
 
+def get_session_dir():
+    """Get Claude's session directory for this project."""
+    cwd = os.getcwd().replace('/', '-')
+    return Path.home() / '.claude' / 'projects' / cwd
+
+
 def run_claude(prompt):
-    """Run claude with prompt in print mode, streaming output via PTY."""
-    import pty
-    import select
+    """Run claude, streaming output by watching session files."""
     import json as json_module
-    import os as os_module
+    import glob
 
-    cmd = [
-        'claude', '-p', prompt,
-        '--output-format', 'stream-json',
-        '--verbose',
-        '--dangerously-skip-permissions',
-    ]
+    session_dir = get_session_dir()
 
-    # Use PTY to force unbuffered output
-    master_fd, slave_fd = pty.openpty()
+    # Note existing session files before starting
+    existing = set(glob.glob(str(session_dir / '*.jsonl')))
 
+    # Start Claude (no streaming flags needed - we read session files)
     process = subprocess.Popen(
-        cmd,
-        stdout=slave_fd,
-        stderr=slave_fd,
-        stdin=slave_fd,
-        close_fds=True,
+        ['claude', '-p', prompt, '--dangerously-skip-permissions'],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
-    os_module.close(slave_fd)
 
-    buffer = ""
-    try:
-        while True:
-            r, _, _ = select.select([master_fd], [], [], 0.1)
-            if master_fd in r:
-                try:
-                    data = os_module.read(master_fd, 1024).decode('utf-8', errors='replace')
-                    if not data:
-                        break
-                    buffer += data
+    # Find the new session file
+    new_session = None
+    for _ in range(50):  # wait up to 5 seconds
+        current = set(glob.glob(str(session_dir / '*.jsonl')))
+        new_files = current - existing
+        if new_files:
+            new_session = max(new_files, key=lambda f: os.path.getmtime(f))
+            break
+        time.sleep(0.1)
 
-                    while '\n' in buffer:
-                        line, buffer = buffer.split('\n', 1)
-                        line = line.strip()
+    if not new_session:
+        log("Warning: Could not find session file")
+        process.wait()
+        return process.returncode
+
+    # Track what we've already printed
+    printed_messages = set()
+    last_size = 0
+
+    while process.poll() is None:
+        try:
+            current_size = os.path.getsize(new_session)
+            if current_size > last_size:
+                with open(new_session, 'r') as f:
+                    f.seek(last_size)
+                    new_content = f.read()
+                    last_size = current_size
+
+                    for line in new_content.strip().split('\n'):
                         if not line:
                             continue
                         try:
                             msg = json_module.loads(line)
                             msg_type = msg.get('type')
 
-                            if msg_type == 'assistant' and 'content' in msg:
-                                for block in msg['content']:
+                            # Assistant messages
+                            if msg_type == 'assistant':
+                                content = msg.get('message', {}).get('content', [])
+                                for block in content:
                                     if block.get('type') == 'text':
-                                        print(block.get('text', ''), end='', flush=True)
+                                        text = block.get('text', '')
+                                        if text:
+                                            print(text, flush=True)
                                     elif block.get('type') == 'tool_use':
                                         tool = block.get('name', 'unknown')
-                                        print(f"\n[tool] {tool}", flush=True)
-                            elif msg_type == 'tool_result':
-                                # Show brief tool result
-                                content = msg.get('content', '')
-                                if isinstance(content, str) and len(content) > 200:
-                                    content = content[:200] + '...'
-                                print(f"[result] {content[:100] if content else 'ok'}", flush=True)
-                            elif msg_type == 'result':
-                                print()
+                                        print(f"  → {tool}", flush=True)
+
                         except json_module.JSONDecodeError:
-                            print(f"[claude] {line}")
-                except OSError:
-                    break
+                            pass
+        except (OSError, IOError):
+            pass
+        time.sleep(0.3)
 
-            if process.poll() is not None:
-                break
-    finally:
-        os_module.close(master_fd)
+    # Final read to catch anything written at the end
+    try:
+        with open(new_session, 'r') as f:
+            f.seek(last_size)
+            final_content = f.read()
+            for line in final_content.strip().split('\n'):
+                if not line:
+                    continue
+                try:
+                    msg = json_module.loads(line)
+                    if msg.get('type') == 'assistant':
+                        content = msg.get('message', {}).get('content', [])
+                        for block in content:
+                            if block.get('type') == 'text':
+                                print(block.get('text', ''), flush=True)
+                except json_module.JSONDecodeError:
+                    pass
+    except (OSError, IOError):
+        pass
 
+    print()
     process.wait()
     return process.returncode
 
