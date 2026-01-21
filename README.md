@@ -1,27 +1,77 @@
-# Ralph Loop Prompting
+# Ralph Loop
 
-A workflow system for iterative AI agent sessions. Ralph loops give Claude Code a structured approach to tackling projects across multiple iterations, with built-in mechanisms for research, task decomposition, and knowledge accumulation.
+An external loop for Claude Code that breaks work into small, focused iterations.
+
+## How It Works
+
+```
+ralph.py (outer loop)
+    │
+    ├─ picks task from tasks.jsonl
+    ├─ creates branch
+    ├─ calls: claude "Read working.md and execute. TASK: [...] MODE: [...]"
+    ├─ Claude works, commits, updates task status
+    ├─ squash merges on completion
+    └─ repeats
+```
+
+## Getting Started
+
+### 1. Initialize Your Project
+
+```bash
+./init.sh
+```
+
+This starts an interactive session where Claude helps you define:
+- **Goals** — What are you building? What problem does it solve?
+- **Constraints** — Development rules (TDD? Type hints? Code style?)
+- **Tech Stack** — Languages, frameworks, dependencies
+- **Success Criteria** — How do you know when it's done?
+
+### 2. Create Your First Task
+
+Add to `tasks.jsonl`:
+```json
+{"id":"A","title":"your first task","status":"pending"}
+```
+
+### 3. Run the Loop
+
+```bash
+python ralph.py
+```
+
+Or run manually:
+```
+claude "Read working.md and execute. TASK: [A] your first task. MODE: WORK"
+```
 
 ## Core Files
 
-- **working.md** - The main workflow instructions read each iteration
-- **idea.md** - Project vision template (the "north star")
-- **log.md** - Session history and NEXT UP task
-- **learnings.md** - Accumulated patterns and gotchas
+| File | Purpose |
+|------|---------|
+| `ralph.py` | External loop orchestrator |
+| `working.md` | Workflow instructions Claude reads each iteration |
+| `idea.md` | Project vision, goals, constraints |
+| `learnings.md` | Accumulated patterns and gotchas |
+| `tasks.jsonl` | Active tasks |
+| `tasks-done.jsonl` | Completed tasks archive |
+
+## Task Flow
+
+```
+pending → active → complete
+                → split (creates subtasks)
+                    ↓
+              [children complete]
+                    ↓
+              verify → complete (or more subtasks)
+```
 
 ## Key Concepts
 
-**Research before implementation** - First iteration is always understanding the problem space, not coding.
-
-**Task readiness** - Tasks must be small, concrete, and fully understood before implementation. If not ready, research or split.
-
-**Recursive splitting** - Large tasks get broken into sub-tasks, which can be split further as needed.
-
-**Knowledge capture** - Patterns and gotchas get documented in learnings.md for future iterations.
-
-## Usage
-
-1. Clone this repo as a starting point for a new project
-2. Fill in idea.md with your project vision
-3. Run ralph loops via the `/ralph-wiggum:ralph-loop` skill in Claude Code
-4. Each iteration reads working.md, picks a task, and makes incremental progress
+- **Small tasks** — ~20-50 lines, 1-3 files
+- **Research is work** — Clarifying IS progress
+- **Split when big** — A → A.1, A.2, A.3
+- **Verify when done** — Parent re-evaluated after children complete
