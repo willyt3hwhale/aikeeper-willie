@@ -147,6 +147,11 @@ def git(*args):
     result = subprocess.run(['git'] + list(args), capture_output=True, text=True)
     return result.returncode, result.stdout.strip()
 
+def get_current_branch():
+    """Get the current git branch name."""
+    _, branch = git('branch', '--show-current')
+    return branch
+
 def slugify(text):
     """Convert text to branch-safe slug."""
     slug = text.lower().replace(' ', '-')
@@ -161,9 +166,9 @@ def create_branch(task_id, title):
         git('checkout', branch)
     return branch
 
-def squash_merge(branch, task_id, title):
-    """Squash merge branch to main, return commit hash."""
-    git('checkout', 'main')
+def squash_merge(branch, task_id, title, base_branch):
+    """Squash merge branch to base_branch, return commit hash."""
+    git('checkout', base_branch)
     git('merge', '--squash', branch)
 
     message = f"[{task_id}] {title}\n\nCompletes: {task_id}"
@@ -348,7 +353,8 @@ def build_prompt(task, mode, role=None):
 # --- Main loop ---
 
 def main():
-    log("Ralph loop starting")
+    base_branch = get_current_branch()
+    log(f"Ralph loop starting (base branch: {base_branch})")
 
     while True:
         # Check stop signal
@@ -427,7 +433,7 @@ def main():
         current = get_task_by_id(tasks, task_id)
 
         if current and current.get('status') == 'complete':
-            commit_hash = squash_merge(branch, task_id, title)
+            commit_hash = squash_merge(branch, task_id, title, base_branch)
 
             if is_root_task(task_id):
                 # Root task complete - archive entire tree
@@ -442,7 +448,7 @@ def main():
         elif current and current.get('status') == 'split':
             # Task was split - merge what we have, but don't archive
             # Children will be worked on in subsequent iterations
-            git('checkout', 'main')
+            git('checkout', base_branch)
             code, _ = git('diff', '--cached', '--quiet')
             if code != 0:  # There are staged changes
                 git('merge', '--squash', branch)
@@ -452,7 +458,7 @@ def main():
 
         else:
             # Not complete, preserve branch for review
-            git('checkout', 'main')
+            git('checkout', base_branch)
             log(f"Branch {branch} preserved for review")
 
 if __name__ == '__main__':
