@@ -175,7 +175,10 @@ def squash_merge(branch, task_id, title, base_branch):
     git('commit', '-m', message)
 
     _, commit_hash = git('rev-parse', '--short', 'HEAD')
-    git('branch', '-d', branch)
+
+    # Clean up branch (local and remote)
+    git('branch', '-D', branch)
+    git('push', 'origin', '--delete', branch)  # ignore if not pushed
 
     return commit_hash
 
@@ -453,7 +456,9 @@ def main():
             if code != 0:  # There are staged changes
                 git('merge', '--squash', branch)
                 git('commit', '-m', f"[{task_id}] Split into subtasks")
-            git('branch', '-D', branch)  # Force delete even if not fully merged
+            # Clean up branch (local and remote)
+            git('branch', '-D', branch)
+            git('push', 'origin', '--delete', branch)
             log(f"=== Split: [{task_id}] - children pending ===")
 
         else:
