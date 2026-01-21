@@ -176,66 +176,77 @@ def squash_merge(branch, task_id, title):
 
 # --- Claude execution ---
 
+def get_session_dir():
+    """Get Claude's session directory for this project."""
+    cwd = os.getcwd().replace('/', '-')
+    return Path.home() / '.claude' / 'projects' / cwd
+
 def run_claude(prompt):
-    """Run claude with prompt in print mode, streaming output via PTY."""
-    import pty
-    import select
+    """Run claude, streaming output by watching session files."""
     import json as json_module
-    import os as os_module
+    import glob
 
-    cmd = [
-        'claude', '-p', prompt,
-        '--output-format', 'stream-json',
-        '--verbose',
-        '--dangerously-skip-permissions',
-    ]
+    session_dir = get_session_dir()
 
-    # Use PTY to force unbuffered output
-    master_fd, slave_fd = pty.openpty()
+    # Note existing session files before starting
+    existing = set(glob.glob(str(session_dir / '*.jsonl')))
 
+    # Start Claude
     process = subprocess.Popen(
-        cmd,
-        stdout=slave_fd,
-        stderr=slave_fd,
-        stdin=slave_fd,
-        close_fds=True,
+        [
+            'claude', '-p', prompt,
+            '--dangerously-skip-permissions',
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
     )
-    os_module.close(slave_fd)
 
-    buffer = ""
-    try:
-        while True:
-            r, _, _ = select.select([master_fd], [], [], 0.1)
-            if master_fd in r:
-                try:
-                    data = os_module.read(master_fd, 1024).decode('utf-8', errors='replace')
-                    if not data:
-                        break
-                    buffer += data
+    # Find the new session file
+    new_session = None
+    for _ in range(50):  # wait up to 5 seconds
+        current = set(glob.glob(str(session_dir / '*.jsonl')))
+        new_files = current - existing
+        if new_files:
+            # Get most recently modified
+            new_session = max(new_files, key=lambda f: os.path.getmtime(f))
+            break
+        time.sleep(0.1)
 
-                    while '\n' in buffer:
-                        line, buffer = buffer.split('\n', 1)
-                        line = line.strip()
+    if not new_session:
+        # Fallback: just wait for process
+        process.wait()
+        return process.returncode
+
+    # Tail the session file for output
+    last_size = 0
+    while process.poll() is None:
+        try:
+            current_size = os.path.getsize(new_session)
+            if current_size > last_size:
+                with open(new_session, 'r') as f:
+                    f.seek(last_size)
+                    new_content = f.read()
+                    last_size = current_size
+
+                    # Parse and display assistant messages
+                    for line in new_content.strip().split('\n'):
                         if not line:
                             continue
                         try:
                             msg = json_module.loads(line)
-                            if msg.get('type') == 'assistant' and 'content' in msg:
-                                for block in msg['content']:
+                            # Look for assistant messages
+                            if msg.get('type') == 'assistant':
+                                content = msg.get('message', {}).get('content', [])
+                                for block in content:
                                     if block.get('type') == 'text':
                                         print(block.get('text', ''), end='', flush=True)
-                            elif msg.get('type') == 'result':
-                                print()
                         except json_module.JSONDecodeError:
-                            print(f"[claude] {line}")
-                except OSError:
-                    break
+                            pass
+        except (OSError, IOError):
+            pass
+        time.sleep(0.2)
 
-            if process.poll() is not None:
-                break
-    finally:
-        os_module.close(master_fd)
-
+    print()  # newline after streaming
     process.wait()
     return process.returncode
 
