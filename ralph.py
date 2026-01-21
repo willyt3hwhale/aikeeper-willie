@@ -177,8 +177,8 @@ def squash_merge(branch, task_id, title):
 # --- Claude execution ---
 
 def run_claude(prompt):
-    """Run claude with prompt, return exit code."""
-    result = subprocess.run(['claude', prompt])
+    """Run claude with prompt in print mode (non-interactive)."""
+    result = subprocess.run(['claude', '-p', prompt])
     return result.returncode
 
 # --- Role triggers (stub) ---
