@@ -184,6 +184,7 @@ def run_claude(prompt):
         [
             'claude', '-p', prompt,
             '--output-format', 'stream-json',
+            '--verbose',
             '--dangerously-skip-permissions',
         ],
         stdout=subprocess.PIPE,
