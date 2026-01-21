@@ -220,11 +220,22 @@ def run_claude(prompt):
                             continue
                         try:
                             msg = json_module.loads(line)
-                            if msg.get('type') == 'assistant' and 'content' in msg:
+                            msg_type = msg.get('type')
+
+                            if msg_type == 'assistant' and 'content' in msg:
                                 for block in msg['content']:
                                     if block.get('type') == 'text':
                                         print(block.get('text', ''), end='', flush=True)
-                            elif msg.get('type') == 'result':
+                                    elif block.get('type') == 'tool_use':
+                                        tool = block.get('name', 'unknown')
+                                        print(f"\n[tool] {tool}", flush=True)
+                            elif msg_type == 'tool_result':
+                                # Show brief tool result
+                                content = msg.get('content', '')
+                                if isinstance(content, str) and len(content) > 200:
+                                    content = content[:200] + '...'
+                                print(f"[result] {content[:100] if content else 'ok'}", flush=True)
+                            elif msg_type == 'result':
                                 print()
                         except json_module.JSONDecodeError:
                             print(f"[claude] {line}")
