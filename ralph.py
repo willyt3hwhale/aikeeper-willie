@@ -192,8 +192,11 @@ def run_claude(prompt):
         text=True,
     )
 
-    # Stream output as it arrives
-    for line in process.stdout:
+    # Stream output as it arrives (readline avoids iterator buffering)
+    while True:
+        line = process.stdout.readline()
+        if not line and process.poll() is not None:
+            break
         line = line.strip()
         if not line:
             continue
@@ -209,7 +212,6 @@ def run_claude(prompt):
         except json_module.JSONDecodeError:
             print(f"[claude] {line}")  # likely an error message
 
-    process.wait()
     return process.returncode
 
 # --- Role triggers (stub) ---
