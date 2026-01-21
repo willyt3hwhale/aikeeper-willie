@@ -234,6 +234,12 @@ def run_claude(prompt):
                             msg = json_module.loads(line)
                             msg_type = msg.get('type')
 
+                            # Colors
+                            CYAN = '\033[36m'
+                            YELLOW = '\033[33m'
+                            DIM = '\033[2m'
+                            RESET = '\033[0m'
+
                             # Assistant messages
                             if msg_type == 'assistant':
                                 content = msg.get('message', {}).get('content', [])
@@ -241,10 +247,31 @@ def run_claude(prompt):
                                     if block.get('type') == 'text':
                                         text = block.get('text', '')
                                         if text:
-                                            print(text, flush=True)
+                                            print(f"{CYAN}{text}{RESET}", flush=True)
                                     elif block.get('type') == 'tool_use':
                                         tool = block.get('name', 'unknown')
-                                        print(f"  → {tool}", flush=True)
+                                        inp = block.get('input', {})
+                                        # Format tool args briefly
+                                        if tool == 'Read':
+                                            arg = inp.get('file_path', '')
+                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                        elif tool == 'Write':
+                                            arg = inp.get('file_path', '')
+                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                        elif tool == 'Edit':
+                                            arg = inp.get('file_path', '')
+                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                        elif tool == 'Bash':
+                                            arg = inp.get('command', '')[:60]
+                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                        elif tool == 'Glob':
+                                            arg = inp.get('pattern', '')
+                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                        elif tool == 'Grep':
+                                            arg = inp.get('pattern', '')
+                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                        else:
+                                            print(f"{YELLOW}  → {tool}{RESET}", flush=True)
 
                         except json_module.JSONDecodeError:
                             pass
