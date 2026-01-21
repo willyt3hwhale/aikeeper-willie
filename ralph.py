@@ -177,9 +177,39 @@ def squash_merge(branch, task_id, title):
 # --- Claude execution ---
 
 def run_claude(prompt):
-    """Run claude with prompt in print mode (non-interactive)."""
-    result = subprocess.run(['claude', '-p', prompt])
-    return result.returncode
+    """Run claude with prompt in print mode, streaming output."""
+    import json as json_module
+
+    process = subprocess.Popen(
+        [
+            'claude', '-p', prompt,
+            '--output-format', 'stream-json',
+            '--dangerously-skip-permissions',
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    # Stream output as it arrives
+    for line in process.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json_module.loads(line)
+            # Print assistant text as it streams
+            if msg.get('type') == 'assistant' and 'content' in msg:
+                for block in msg['content']:
+                    if block.get('type') == 'text':
+                        print(block.get('text', ''), end='', flush=True)
+            elif msg.get('type') == 'result':
+                print()  # newline after streaming
+        except json_module.JSONDecodeError:
+            print(line)  # fallback: print raw
+
+    process.wait()
+    return process.returncode
 
 # --- Role triggers (stub) ---
 
