@@ -187,7 +187,7 @@ def run_claude(prompt):
             '--dangerously-skip-permissions',
         ],
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,  # merge stderr into stdout so we see errors
         text=True,
     )
 
@@ -206,7 +206,7 @@ def run_claude(prompt):
             elif msg.get('type') == 'result':
                 print()  # newline after streaming
         except json_module.JSONDecodeError:
-            print(line)  # fallback: print raw
+            print(f"[claude] {line}")  # likely an error message
 
     process.wait()
     return process.returncode
