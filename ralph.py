@@ -177,41 +177,66 @@ def squash_merge(branch, task_id, title):
 # --- Claude execution ---
 
 def run_claude(prompt):
-    """Run claude with prompt in print mode, streaming output."""
+    """Run claude with prompt in print mode, streaming output via PTY."""
+    import pty
+    import select
     import json as json_module
+    import os as os_module
+
+    cmd = [
+        'claude', '-p', prompt,
+        '--output-format', 'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions',
+    ]
+
+    # Use PTY to force unbuffered output
+    master_fd, slave_fd = pty.openpty()
 
     process = subprocess.Popen(
-        [
-            'claude', '-p', prompt,
-            '--output-format', 'stream-json',
-            '--verbose',
-            '--dangerously-skip-permissions',
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,  # merge stderr into stdout so we see errors
-        text=True,
+        cmd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        stdin=slave_fd,
+        close_fds=True,
     )
+    os_module.close(slave_fd)
 
-    # Stream output as it arrives (readline avoids iterator buffering)
-    while True:
-        line = process.stdout.readline()
-        if not line and process.poll() is not None:
-            break
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json_module.loads(line)
-            # Print assistant text as it streams
-            if msg.get('type') == 'assistant' and 'content' in msg:
-                for block in msg['content']:
-                    if block.get('type') == 'text':
-                        print(block.get('text', ''), end='', flush=True)
-            elif msg.get('type') == 'result':
-                print()  # newline after streaming
-        except json_module.JSONDecodeError:
-            print(f"[claude] {line}")  # likely an error message
+    buffer = ""
+    try:
+        while True:
+            r, _, _ = select.select([master_fd], [], [], 0.1)
+            if master_fd in r:
+                try:
+                    data = os_module.read(master_fd, 1024).decode('utf-8', errors='replace')
+                    if not data:
+                        break
+                    buffer += data
 
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            msg = json_module.loads(line)
+                            if msg.get('type') == 'assistant' and 'content' in msg:
+                                for block in msg['content']:
+                                    if block.get('type') == 'text':
+                                        print(block.get('text', ''), end='', flush=True)
+                            elif msg.get('type') == 'result':
+                                print()
+                        except json_module.JSONDecodeError:
+                            print(f"[claude] {line}")
+                except OSError:
+                    break
+
+            if process.poll() is not None:
+                break
+    finally:
+        os_module.close(master_fd)
+
+    process.wait()
     return process.returncode
 
 # --- Role triggers (stub) ---
@@ -273,9 +298,8 @@ def main():
         # 1. POLL for task
         task, mode = get_next_task(tasks)
         if not task:
-            log("No pending tasks, sleeping...")
-            time.sleep(POLL_INTERVAL)
-            continue
+            log("No more tasks. Exiting.")
+            break
 
         task_id = task['id']
         title = task['title']
