@@ -176,42 +176,78 @@ def squash_merge(branch, task_id, title):
 
 # --- Claude execution ---
 
-def run_claude(prompt):
-    """Run claude with prompt in print mode, streaming output."""
-    import json as json_module
+def get_session_dir():
+    """Get Claude's session directory for this project."""
+    cwd = os.getcwd().replace('/', '-')
+    return Path.home() / '.claude' / 'projects' / cwd
 
+def run_claude(prompt):
+    """Run claude, streaming output by watching session files."""
+    import json as json_module
+    import glob
+
+    session_dir = get_session_dir()
+
+    # Note existing session files before starting
+    existing = set(glob.glob(str(session_dir / '*.jsonl')))
+
+    # Start Claude
     process = subprocess.Popen(
         [
             'claude', '-p', prompt,
-            '--output-format', 'stream-json',
-            '--verbose',
             '--dangerously-skip-permissions',
         ],
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,  # merge stderr into stdout so we see errors
-        text=True,
+        stderr=subprocess.STDOUT,
     )
 
-    # Stream output as it arrives (readline avoids iterator buffering)
-    while True:
-        line = process.stdout.readline()
-        if not line and process.poll() is not None:
+    # Find the new session file
+    new_session = None
+    for _ in range(50):  # wait up to 5 seconds
+        current = set(glob.glob(str(session_dir / '*.jsonl')))
+        new_files = current - existing
+        if new_files:
+            # Get most recently modified
+            new_session = max(new_files, key=lambda f: os.path.getmtime(f))
             break
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json_module.loads(line)
-            # Print assistant text as it streams
-            if msg.get('type') == 'assistant' and 'content' in msg:
-                for block in msg['content']:
-                    if block.get('type') == 'text':
-                        print(block.get('text', ''), end='', flush=True)
-            elif msg.get('type') == 'result':
-                print()  # newline after streaming
-        except json_module.JSONDecodeError:
-            print(f"[claude] {line}")  # likely an error message
+        time.sleep(0.1)
 
+    if not new_session:
+        # Fallback: just wait for process
+        process.wait()
+        return process.returncode
+
+    # Tail the session file for output
+    last_size = 0
+    while process.poll() is None:
+        try:
+            current_size = os.path.getsize(new_session)
+            if current_size > last_size:
+                with open(new_session, 'r') as f:
+                    f.seek(last_size)
+                    new_content = f.read()
+                    last_size = current_size
+
+                    # Parse and display assistant messages
+                    for line in new_content.strip().split('\n'):
+                        if not line:
+                            continue
+                        try:
+                            msg = json_module.loads(line)
+                            # Look for assistant messages
+                            if msg.get('type') == 'assistant':
+                                content = msg.get('message', {}).get('content', [])
+                                for block in content:
+                                    if block.get('type') == 'text':
+                                        print(block.get('text', ''), end='', flush=True)
+                        except json_module.JSONDecodeError:
+                            pass
+        except (OSError, IOError):
+            pass
+        time.sleep(0.2)
+
+    print()  # newline after streaming
+    process.wait()
     return process.returncode
 
 # --- Role triggers (stub) ---
@@ -273,9 +309,8 @@ def main():
         # 1. POLL for task
         task, mode = get_next_task(tasks)
         if not task:
-            log("No pending tasks, sleeping...")
-            time.sleep(POLL_INTERVAL)
-            continue
+            log("No more tasks. Exiting.")
+            break
 
         task_id = task['id']
         title = task['title']
