@@ -353,6 +353,26 @@ def build_prompt(task, mode, role=None):
 
     return "\n".join(parts)
 
+
+def build_completion_check_prompt():
+    """Build prompt for verifying project completion when task list is empty."""
+    parts = [
+        "The task list is empty. Verify the project is complete.",
+        "",
+        "## Instructions",
+        "1. Read idea.md to understand the project vision and success criteria",
+        "2. Review the codebase to assess what has been built",
+        "3. Compare against the goals and success criteria in idea.md",
+        "",
+        "## Decision",
+        "- If the project meets all success criteria → respond with: PROJECT_COMPLETE",
+        "- If gaps remain → add new tasks to tasks.jsonl for missing work",
+        "",
+        "Be thorough. Check that all goals are met, not just some.",
+        "If adding tasks, ensure they are specific and actionable.",
+    ]
+    return "\n".join(parts)
+
 # --- Main loop ---
 
 def main():
@@ -371,8 +391,25 @@ def main():
         # 1. POLL for task
         task, mode = get_next_task(tasks)
         if not task:
-            log("No more tasks. Exiting.")
-            break
+            # No tasks - verify project completion against idea.md
+            log("Task list empty. Verifying project completion...")
+
+            prompt = build_completion_check_prompt()
+            exit_code = run_claude(prompt)
+
+            if exit_code != 0:
+                log(f"Claude exited with code {exit_code}, retrying...")
+                time.sleep(5)
+                continue
+
+            # Check if new tasks were added
+            tasks = read_tasks()
+            if tasks:
+                log("New tasks identified. Continuing...")
+                continue
+            else:
+                log("Project complete. Exiting.")
+                break
 
         task_id = task['id']
         title = task['title']
