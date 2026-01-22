@@ -103,8 +103,19 @@ def console_reader_thread():
     except ImportError:
         print("prompt_toolkit not installed. Run: pip install prompt_toolkit")
 
+def strip_ansi(text):
+    """Remove ANSI escape codes from text."""
+    import re
+    return re.sub(r'\033\[[0-9;]*m', '', text)
+
 def tui_print(msg, ansi=False):
     """Print message above the input line."""
+    # Always log to file (strip ANSI codes)
+    clean_msg = strip_ansi(msg) if ansi else msg
+    if clean_msg.strip():
+        with open(LOG_FILE, 'a') as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] {clean_msg}\n")
+
     if ansi and stdout_context:
         # Use prompt_toolkit's ANSI-aware printing
         try:
@@ -140,6 +151,8 @@ def stop_console_reader():
         except Exception:
             pass  # Ignore cleanup errors
         stdout_context = None
+        # Remind user about log file (print after patch_stdout closed)
+        print(f"\nFull log: {LOG_FILE}")
 
 # --- Task operations ---
 
