@@ -76,7 +76,9 @@ Cover these topics:
 - Tech stack: Languages, frameworks, key dependencies
 - Success criteria: How do we know when it's done?
 
-After gathering all answers, write the complete {idea_file} file."""
+After gathering all answers, write the complete {idea_file} file.
+
+Then tell the user: "idea.md is ready. Please exit this session (Ctrl+C or /exit) and run 'willie' to start the loop.\""""
 
     result = subprocess.run(["claude", prompt])
     if result.returncode != 0:
@@ -109,7 +111,9 @@ Cover these topics:
 - Tech stack: Languages, frameworks, key dependencies
 - Success criteria: How do we know when it's done?
 
-After gathering all answers, write the complete {idea_file} file."""
+After gathering all answers, write the complete {idea_file} file.
+
+Then tell the user: "idea.md is ready. Please exit this session (Ctrl+C or /exit) and run 'willie' to start the loop.\""""
 
     result = subprocess.run(["claude", prompt])
     if result.returncode != 0:
