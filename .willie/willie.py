@@ -131,6 +131,16 @@ def start_console_reader():
         print("prompt_toolkit not installed. Run: pip install prompt_toolkit")
         print("Falling back to inbox.txt only.")
 
+def stop_console_reader():
+    """Clean up the TUI console reader."""
+    global stdout_context
+    if stdout_context:
+        try:
+            stdout_context.__exit__(None, None, None)
+        except Exception:
+            pass  # Ignore cleanup errors
+        stdout_context = None
+
 # --- Task operations ---
 
 def get_children(tasks, parent_id):
@@ -667,4 +677,7 @@ If it's feedback about the project, incorporate it appropriately."""
             log(f"Branch {branch} preserved for review")
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    finally:
+        stop_console_reader()
