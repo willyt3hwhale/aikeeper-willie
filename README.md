@@ -1,5 +1,7 @@
 # Willie Loop
 
+![Groundskeeper Willie](https://upload.wikimedia.org/wikipedia/en/d/dc/GroundskeeperWillie.png)
+
 An external loop for Claude Code that breaks work into small, focused iterations.
 
 ## How It Works
