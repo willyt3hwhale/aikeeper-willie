@@ -66,7 +66,17 @@ def cmd_init() -> None:
     # Run Claude to help define idea.md
     idea_file = WILLIE_DIR / "idea.md"
     working_file = WILLIE_DIR / "working.md"
-    prompt = f"Read {working_file} and help me define {idea_file} with my project idea. Ask me questions until you're 99% sure about what I want to build. Cover: goals, constraints, tech stack, and success criteria."
+    prompt = f"""Read {working_file} and help me define {idea_file} with my project idea.
+
+Use the AskUserQuestion tool to ask me questions one at a time until you're 99% sure about what I want to build.
+
+Cover these topics:
+- Goals: What am I building? What problem does it solve?
+- Constraints: Development rules and standards
+- Tech stack: Languages, frameworks, key dependencies
+- Success criteria: How do we know when it's done?
+
+After gathering all answers, write the complete {idea_file} file."""
 
     result = subprocess.run(["claude", prompt])
     if result.returncode != 0:
@@ -89,7 +99,17 @@ def cmd_edit() -> None:
     idea_file = WILLIE_DIR / "idea.md"
     working_file = WILLIE_DIR / "working.md"
 
-    prompt = f"Read {working_file} and help me define {idea_file} with my project idea. Ask me questions until you're 99% sure about what I want to build. Cover: goals, constraints, tech stack, and success criteria."
+    prompt = f"""Read {working_file} and help me define {idea_file} with my project idea.
+
+Use the AskUserQuestion tool to ask me questions one at a time until you're 99% sure about what I want to build.
+
+Cover these topics:
+- Goals: What am I building? What problem does it solve?
+- Constraints: Development rules and standards
+- Tech stack: Languages, frameworks, key dependencies
+- Success criteria: How do we know when it's done?
+
+After gathering all answers, write the complete {idea_file} file."""
 
     result = subprocess.run(["claude", prompt])
     if result.returncode != 0:
