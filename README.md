@@ -1,11 +1,11 @@
-# Ralph Loop
+# Willie Loop
 
 An external loop for Claude Code that breaks work into small, focused iterations.
 
 ## How It Works
 
 ```
-ralph.py (outer loop)
+willie.py (outer loop)
     │
     ├─ picks task from tasks.jsonl
     ├─ creates branch
@@ -39,10 +39,10 @@ Add to `tasks.jsonl`:
 ### 3. Run the Loop
 
 ```bash
-./ralph           # Normal mode
-./ralph -c        # With console input (TUI)
-./ralph -d        # Daemon mode (poll forever)
-./ralph -cd       # Both
+./willie           # Normal mode
+./willie -c        # With console input (TUI)
+./willie -d        # Daemon mode (poll forever)
+./willie -cd       # Both
 ```
 
 The wrapper script auto-creates a virtual environment on first run.
@@ -56,7 +56,7 @@ claude "Read working.md and execute. TASK: [A] your first task. MODE: WORK"
 
 | File | Purpose |
 |------|---------|
-| `ralph.py` | External loop orchestrator |
+| `willie.py` | External loop orchestrator |
 | `working.md` | Workflow instructions Claude reads each iteration |
 | `idea.md` | Project vision, goals, constraints |
 | `learnings.md` | Accumulated patterns and gotchas |

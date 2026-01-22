@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ralph.py - external loop with task management"""
+"""willie.py - external loop with task management"""
 
 import argparse
 import json
@@ -16,7 +16,7 @@ MAX_ITERATIONS = 20
 POLL_INTERVAL = 5
 TASKS_FILE = Path("tasks.jsonl")
 DONE_FILE = Path("tasks-done.jsonl")
-LOG_FILE = Path("ralph.log")
+LOG_FILE = Path("willie.log")
 INBOX_FILE = Path("inbox.txt")
 
 # --- JSONL helpers ---
@@ -84,7 +84,7 @@ def console_reader_thread():
 
         while True:
             try:
-                line = prompt_session.prompt(HTML('<ansigreen>ralph></ansigreen> '))
+                line = prompt_session.prompt(HTML('<ansigreen>willie></ansigreen> '))
                 if line.strip():
                     with console_lock:
                         console_input_queue.append(line.strip())
@@ -476,7 +476,7 @@ def build_completion_check_prompt():
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Ralph Loop - external orchestrator for Claude Code')
+    parser = argparse.ArgumentParser(description='Willie Loop - external orchestrator for Claude Code')
     parser.add_argument('-c', '--console', action='store_true',
                         help='Enable interactive console input')
     parser.add_argument('-d', '--daemon', action='store_true',
@@ -487,7 +487,7 @@ def main():
     args = parse_args()
 
     base_branch = get_current_branch()
-    log(f"Ralph loop starting (base branch: {base_branch})")
+    log(f"Willie loop starting (base branch: {base_branch})")
 
     if args.console:
         start_console_reader()

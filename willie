@@ -1,5 +1,5 @@
 #!/bin/bash
-# ralph - wrapper script that handles venv setup automatically
+# willie - wrapper script that handles venv setup automatically
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
@@ -19,5 +19,5 @@ if ! "$VENV_DIR/bin/python" -c "import prompt_toolkit" 2>/dev/null; then
     "$VENV_DIR/bin/pip" install --quiet $REQUIREMENTS
 fi
 
-# Run ralph.py with all arguments passed through
-exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/ralph.py" "$@"
+# Run willie.py with all arguments passed through
+exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/willie.py" "$@"
