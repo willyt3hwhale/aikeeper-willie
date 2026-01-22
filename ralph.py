@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """ralph.py - external loop with task management"""
 
+import argparse
 import json
 import subprocess
+import sys
+import threading
 import time
 import os
 from datetime import date
@@ -14,6 +17,7 @@ POLL_INTERVAL = 5
 TASKS_FILE = Path("tasks.jsonl")
 DONE_FILE = Path("tasks-done.jsonl")
 LOG_FILE = Path("ralph.log")
+INBOX_FILE = Path("inbox.txt")
 
 # --- JSONL helpers ---
 
@@ -36,11 +40,93 @@ def append_done(task):
         f.write(json.dumps(task) + '\n')
 
 def log(msg):
-    """Log to console and file."""
+    """Log to console and file. Works with TUI (patch_stdout handles redirection)."""
     line = f"[{time.strftime('%H:%M:%S')}] {msg}"
     print(line)
     with open(LOG_FILE, 'a') as f:
         f.write(line + '\n')
+
+def read_inbox():
+    """Read and clear the inbox file. Returns content or None."""
+    if not INBOX_FILE.exists():
+        return None
+    content = INBOX_FILE.read_text().strip()
+    if not content:
+        return None
+    INBOX_FILE.unlink()  # Clear after reading
+    return content
+
+# --- Console input (TUI) ---
+
+console_input_queue = []
+console_lock = threading.Lock()
+console_quit = False
+prompt_session = None
+stdout_context = None
+
+def get_console_input():
+    """Get and clear any pending console input."""
+    with console_lock:
+        if not console_input_queue:
+            return None
+        # Join all queued messages
+        result = '\n'.join(console_input_queue)
+        console_input_queue.clear()
+        return result
+
+def console_reader_thread():
+    """Background thread to read console input with prompt_toolkit."""
+    global prompt_session, console_quit
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.formatted_text import HTML
+        prompt_session = PromptSession()
+
+        while True:
+            try:
+                line = prompt_session.prompt(HTML('<ansigreen>ralph></ansigreen> '))
+                if line.strip():
+                    with console_lock:
+                        console_input_queue.append(line.strip())
+                    tui_print(f"[queued] {line.strip()}")
+            except EOFError:
+                tui_print("Console closed. Shutting down...")
+                console_quit = True
+                break
+            except KeyboardInterrupt:
+                tui_print("Interrupted. Shutting down...")
+                console_quit = True
+                break
+    except ImportError:
+        print("prompt_toolkit not installed. Run: pip install prompt_toolkit")
+
+def tui_print(msg, ansi=False):
+    """Print message above the input line."""
+    if ansi and stdout_context:
+        # Use prompt_toolkit's ANSI-aware printing
+        try:
+            from prompt_toolkit import print_formatted_text
+            from prompt_toolkit.formatted_text import ANSI
+            print_formatted_text(ANSI(msg))
+            return
+        except ImportError:
+            pass
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}")
+
+def start_console_reader():
+    """Start the TUI console reader."""
+    try:
+        from prompt_toolkit.patch_stdout import patch_stdout
+        global stdout_context
+        stdout_context = patch_stdout()
+        stdout_context.__enter__()
+
+        thread = threading.Thread(target=console_reader_thread, daemon=True)
+        thread.start()
+        tui_print("Console input enabled. Type messages at the prompt.")
+    except ImportError:
+        print("prompt_toolkit not installed. Run: pip install prompt_toolkit")
+        print("Falling back to inbox.txt only.")
 
 # --- Task operations ---
 
@@ -248,6 +334,9 @@ def run_claude(prompt):
                             DIM = '\033[2m'
                             RESET = '\033[0m'
 
+                            def cprint(s):
+                                tui_print(s, ansi=True)
+
                             # Assistant messages
                             if msg_type == 'assistant':
                                 content = msg.get('message', {}).get('content', [])
@@ -255,31 +344,31 @@ def run_claude(prompt):
                                     if block.get('type') == 'text':
                                         text = block.get('text', '')
                                         if text:
-                                            print(f"{CYAN}{text}{RESET}", flush=True)
+                                            cprint(f"{CYAN}{text}{RESET}")
                                     elif block.get('type') == 'tool_use':
                                         tool = block.get('name', 'unknown')
                                         inp = block.get('input', {})
                                         # Format tool args briefly
                                         if tool == 'Read':
                                             arg = inp.get('file_path', '')
-                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                            cprint(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}")
                                         elif tool == 'Write':
                                             arg = inp.get('file_path', '')
-                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                            cprint(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}")
                                         elif tool == 'Edit':
                                             arg = inp.get('file_path', '')
-                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                            cprint(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}")
                                         elif tool == 'Bash':
                                             arg = inp.get('command', '')[:60]
-                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                            cprint(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}")
                                         elif tool == 'Glob':
                                             arg = inp.get('pattern', '')
-                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                            cprint(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}")
                                         elif tool == 'Grep':
                                             arg = inp.get('pattern', '')
-                                            print(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}", flush=True)
+                                            cprint(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}")
                                         else:
-                                            print(f"{YELLOW}  → {tool}{RESET}", flush=True)
+                                            cprint(f"{YELLOW}  → {tool}{RESET}")
 
                         except json_module.JSONDecodeError:
                             pass
@@ -288,6 +377,8 @@ def run_claude(prompt):
         time.sleep(0.3)
 
     # Final read to catch anything written at the end
+    CYAN = '\033[36m'
+    RESET = '\033[0m'
     try:
         with open(new_session, 'r') as f:
             f.seek(last_size)
@@ -301,13 +392,15 @@ def run_claude(prompt):
                         content = msg.get('message', {}).get('content', [])
                         for block in content:
                             if block.get('type') == 'text':
-                                print(block.get('text', ''), flush=True)
+                                text = block.get('text', '')
+                                if text:
+                                    tui_print(f"{CYAN}{text}{RESET}", ansi=True)
                 except json_module.JSONDecodeError:
                     pass
     except (OSError, IOError):
         pass
 
-    print()
+    tui_print("", ansi=True)  # blank line
     process.wait()
     return process.returncode
 
@@ -322,7 +415,7 @@ def evaluate_triggers(task, iteration, mode):
     # - mode == 'verify' might trigger reviewer role
     return None
 
-def build_prompt(task, mode, role=None):
+def build_prompt(task, mode, role=None, user_input=None):
     """Build prompt based on task and mode.
 
     mode: 'work' (normal task) or 'verify' (split task, children complete)
@@ -331,6 +424,12 @@ def build_prompt(task, mode, role=None):
     title = task['title']
 
     parts = ["Read working.md and execute.", ""]
+
+    # User input (highest priority context)
+    if user_input:
+        parts.append("USER INPUT (address this first):")
+        parts.append(user_input)
+        parts.append("")
 
     # Task context
     parts.append(f"TASK: [{task_id}] {title}")
@@ -375,15 +474,35 @@ def build_completion_check_prompt():
 
 # --- Main loop ---
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Ralph Loop - external orchestrator for Claude Code')
+    parser.add_argument('-c', '--console', action='store_true',
+                        help='Enable interactive console input')
+    parser.add_argument('-d', '--daemon', action='store_true',
+                        help='Run as daemon (poll forever instead of exiting when idle)')
+    return parser.parse_args()
+
 def main():
+    args = parse_args()
+
     base_branch = get_current_branch()
     log(f"Ralph loop starting (base branch: {base_branch})")
 
+    if args.console:
+        start_console_reader()
+
+    waiting_logged = False
+
     while True:
-        # Check stop signal
+        # Check stop signals
         if Path('.stop').exists():
             log("Stop signal received")
             Path('.stop').unlink()
+            break
+
+        if args.console and console_quit:
+            log("Console quit signal received")
             break
 
         tasks = read_tasks()
@@ -391,29 +510,58 @@ def main():
         # 1. POLL for task
         task, mode = get_next_task(tasks)
         if not task:
-            # No tasks - verify project completion against idea.md
-            log("Task list empty. Verifying project completion...")
+            # Check for user input that might create tasks
+            user_input = get_console_input() if args.console else None
+            inbox_input = read_inbox()
+            if inbox_input:
+                user_input = f"{inbox_input}\n\n{user_input}" if user_input else inbox_input
 
-            prompt = build_completion_check_prompt()
-            exit_code = run_claude(prompt)
+            if user_input:
+                # User input with no tasks - let Claude interpret and create tasks
+                log(f"Processing user input: {user_input[:50]}...")
+                waiting_logged = False
+                prompt = f"""No active tasks. User says:
 
-            if exit_code != 0:
-                log(f"Claude exited with code {exit_code}, retrying...")
-                time.sleep(5)
+{user_input}
+
+If this is a task request, add it to tasks.jsonl.
+If it's a question, answer it briefly.
+If it's feedback about the project, incorporate it appropriately."""
+                run_claude(prompt)
                 continue
 
-            # Check if new tasks were added
-            tasks = read_tasks()
-            if tasks:
-                log("New tasks identified. Continuing...")
+            if args.daemon:
+                # Daemon mode: wait for new tasks (log once)
+                if not waiting_logged:
+                    log("No tasks. Waiting... (type a message or add tasks)")
+                    waiting_logged = True
+                time.sleep(POLL_INTERVAL)
                 continue
             else:
-                log("Project complete. Exiting.")
-                break
+                # Normal mode: verify project completion against idea.md
+                log("Task list empty. Verifying project completion...")
+
+                prompt = build_completion_check_prompt()
+                exit_code = run_claude(prompt)
+
+                if exit_code != 0:
+                    log(f"Claude exited with code {exit_code}, retrying...")
+                    time.sleep(5)
+                    continue
+
+                # Check if new tasks were added
+                tasks = read_tasks()
+                if tasks:
+                    log("New tasks identified. Continuing...")
+                    continue
+                else:
+                    log("Project complete. Exiting.")
+                    break
 
         task_id = task['id']
         title = task['title']
         log(f"=== [{mode.upper()}] [{task_id}] {title} ===")
+        waiting_logged = False
 
         # 2. CLAIM (mark as active)
         update_task_status(tasks, task_id, 'active')
@@ -430,9 +578,21 @@ def main():
             iterations += 1
             log(f"--- Iteration {iterations} ---")
 
+            # Check for user input (inbox file or console)
+            user_input = read_inbox()
+            if args.console:
+                console = get_console_input()
+                if console:
+                    if user_input:
+                        user_input = f"{user_input}\n\n{console}"
+                    else:
+                        user_input = console
+            if user_input:
+                log(f"User input received: {user_input[:50]}...")
+
             # Evaluate role triggers
             role = evaluate_triggers(task, iterations, mode)
-            prompt = build_prompt(task, mode, role)
+            prompt = build_prompt(task, mode, role, user_input)
 
             # Run Claude
             exit_code = run_claude(prompt)

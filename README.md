@@ -39,8 +39,13 @@ Add to `tasks.jsonl`:
 ### 3. Run the Loop
 
 ```bash
-python ralph.py
+./ralph           # Normal mode
+./ralph -c        # With console input (TUI)
+./ralph -d        # Daemon mode (poll forever)
+./ralph -cd       # Both
 ```
+
+The wrapper script auto-creates a virtual environment on first run.
 
 Or run manually:
 ```
