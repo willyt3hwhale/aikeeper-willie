@@ -33,20 +33,13 @@ willie.py (outer loop)
 ./init.sh
 ```
 
-This starts an interactive session where Claude helps you define:
+This starts an interactive session where Claude helps you define your `idea.md`:
 - **Goals** — What are you building? What problem does it solve?
 - **Constraints** — Development rules (TDD? Type hints? Code style?)
 - **Tech Stack** — Languages, frameworks, dependencies
 - **Success Criteria** — How do you know when it's done?
 
-### 2. Create Your First Task
-
-Add to `tasks.jsonl`:
-```json
-{"id":"A","title":"your first task","status":"pending"}
-```
-
-### 3. Run the Loop
+### 2. Run the Loop
 
 ```bash
 ./willie           # Normal mode
@@ -55,11 +48,15 @@ Add to `tasks.jsonl`:
 ./willie -cd       # Both
 ```
 
+Willie reads `idea.md`, creates tasks automatically, and works through them.
+
 The wrapper script auto-creates a virtual environment on first run.
 
-Or run manually:
-```
-claude "Read working.md and execute. TASK: [A] your first task. MODE: WORK"
+### Manual Task Creation (Optional)
+
+You can also add tasks directly to `tasks.jsonl`:
+```json
+{"id":"A","title":"your first task","status":"pending"}
 ```
 
 ## Core Files
