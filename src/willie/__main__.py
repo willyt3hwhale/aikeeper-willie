@@ -72,8 +72,9 @@ Use the AskUserQuestion tool to ask me questions one at a time until you're 99% 
 
 Cover these topics:
 - Goals: What am I building? What problem does it solve?
-- Constraints: Development rules and standards
 - Tech stack: Languages, frameworks, key dependencies
+- Development workflow: TDD? Testing requirements? Code style? Documentation?
+- Constraints: Any rules, limitations, or standards to follow
 - Success criteria: How do we know when it's done?
 
 After gathering all answers, write the complete {idea_file} file.
@@ -107,8 +108,9 @@ Use the AskUserQuestion tool to ask me questions one at a time until you're 99% 
 
 Cover these topics:
 - Goals: What am I building? What problem does it solve?
-- Constraints: Development rules and standards
 - Tech stack: Languages, frameworks, key dependencies
+- Development workflow: TDD? Testing requirements? Code style? Documentation?
+- Constraints: Any rules, limitations, or standards to follow
 - Success criteria: How do we know when it's done?
 
 After gathering all answers, write the complete {idea_file} file.
