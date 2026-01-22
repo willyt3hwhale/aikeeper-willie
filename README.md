@@ -2,7 +2,9 @@
 
 ![Groundskeeper Willie](https://upload.wikimedia.org/wikipedia/en/d/dc/GroundskeeperWillie.png)
 
-An external loop for Claude Code that breaks work into small, focused iterations.
+An external orchestration loop for Claude Code with task tracking, branch-per-task git workflow, and interactive console.
+
+Based on the [Ralph Wiggum](https://github.com/anthropics/claude-code/blob/main/.claude/skills/ralph-wiggum/ralph-loop.md) prompting technique — but run externally with persistent task state and clean git history.
 
 ## How It Works
 
@@ -16,6 +18,12 @@ willie.py (outer loop)
     ├─ squash merges on completion
     └─ repeats
 ```
+
+## Requirements
+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- Python 3.8+
+- Git
 
 ## Getting Started
 
