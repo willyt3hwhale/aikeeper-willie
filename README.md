@@ -9,11 +9,6 @@ Based on the [Ralph Wiggum](https://github.com/anthropics/claude-code/blob/main/
 ## Installation
 
 ```bash
-pip install aikeeper-willie
-```
-
-Or install from source:
-```bash
 git clone https://github.com/willyt3hwhale/aikeeper-willie.git
 cd aikeeper-willie
 pip install -e .
@@ -34,21 +29,13 @@ cd your-project
 willie init
 ```
 
-This creates a `.willie/` folder with workflow files.
-
-### 2. Define Your Project
-
-```bash
-willie edit
-```
-
-This starts an interactive session where Claude helps you define `.willie/idea.md`:
+This creates a `.willie/` folder and starts an interactive session where Claude helps you define your project:
 - **Goals** — What are you building? What problem does it solve?
 - **Constraints** — Development rules (TDD? Type hints? Code style?)
 - **Tech Stack** — Languages, frameworks, dependencies
 - **Success Criteria** — How do you know when it's done?
 
-### 3. Run the Loop
+### 2. Run the Loop
 
 ```bash
 willie              # Normal mode

@@ -307,6 +307,9 @@ def run_claude(prompt):
 
     session_dir = get_session_dir()
 
+    # Ensure session directory exists (Claude creates it, but we need to watch it)
+    session_dir.mkdir(parents=True, exist_ok=True)
+
     # Note existing session files before starting
     existing = set(glob.glob(str(session_dir / '*.jsonl')))
 
@@ -317,9 +320,9 @@ def run_claude(prompt):
         stderr=subprocess.DEVNULL,
     )
 
-    # Find the new session file
+    # Find the new session file (wait up to 10 seconds)
     new_session = None
-    for _ in range(50):  # wait up to 5 seconds
+    for _ in range(100):
         current = set(glob.glob(str(session_dir / '*.jsonl')))
         new_files = current - existing
         if new_files:
@@ -328,7 +331,9 @@ def run_claude(prompt):
         time.sleep(0.1)
 
     if not new_session:
-        log("Warning: Could not find session file")
+        # Session file not found - Claude might use a different session dir
+        # Just wait for the process without streaming
+        log("(streaming unavailable, waiting for Claude...)")
         process.wait()
         return process.returncode
 

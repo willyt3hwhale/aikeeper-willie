@@ -36,9 +36,18 @@ def cmd_init():
     print(f"  Created {WILLIE_DIR}/tasks.jsonl")
 
     print()
-    print("Willie initialized! Next steps:")
-    print("  1. Run: willie edit    # Define your project in idea.md")
-    print("  2. Run: willie         # Start the loop")
+    print("Starting interactive session to define your project...")
+    print()
+
+    # Run Claude to help define idea.md
+    idea_file = WILLIE_DIR / "idea.md"
+    working_file = WILLIE_DIR / "working.md"
+    prompt = f"Read {working_file} and help me define {idea_file} with my project idea. Ask me questions until you're 99% sure about what I want to build. Cover: goals, constraints, tech stack, and success criteria."
+
+    subprocess.run(["claude", prompt])
+
+    print()
+    print("Willie initialized! Run 'willie' to start the loop.")
 
 def cmd_edit():
     """Open interactive session to define idea.md."""
