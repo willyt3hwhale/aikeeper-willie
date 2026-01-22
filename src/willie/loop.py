@@ -521,8 +521,10 @@ def build_completion_check_prompt():
         "- If the project meets all success criteria → respond with: PROJECT_COMPLETE",
         "- If gaps remain → add new tasks to .willie/tasks.jsonl for missing work",
         "",
+        "## Task Format",
+        'Tasks MUST include status field: {"id": "1", "title": "...", "status": "pending"}',
+        "",
         "Be thorough. Check that all goals are met, not just some.",
-        "If adding tasks, ensure they are specific and actionable.",
     ]
     return "\n".join(parts)
 
