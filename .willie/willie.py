@@ -363,6 +363,27 @@ def run_claude(prompt):
                             def cprint(s):
                                 tui_print(s, ansi=True)
 
+                            def format_tool_result(content, max_lines=3):
+                                """Format tool result, showing first N lines."""
+                                if not content:
+                                    return None
+                                lines = str(content).split('\n')
+                                if len(lines) <= max_lines:
+                                    return '\n'.join(f"    {line}" for line in lines if line.strip())
+                                shown = '\n'.join(f"    {line}" for line in lines[:max_lines] if line.strip())
+                                return f"{shown}\n    {DIM}... ({len(lines) - max_lines} more lines){RESET}"
+
+                            # Tool results (from user messages)
+                            if msg_type == 'user':
+                                content = msg.get('message', {}).get('content', [])
+                                for block in content:
+                                    if block.get('type') == 'tool_result':
+                                        result = block.get('content', '')
+                                        if result:
+                                            formatted = format_tool_result(result)
+                                            if formatted:
+                                                cprint(f"{DIM}{formatted}{RESET}")
+
                             # Assistant messages
                             if msg_type == 'assistant':
                                 content = msg.get('message', {}).get('content', [])
