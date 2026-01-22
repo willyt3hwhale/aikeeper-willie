@@ -9,11 +9,11 @@ Based on the [Ralph Wiggum](https://github.com/anthropics/claude-code/blob/main/
 ## How It Works
 
 ```
-willie.py (outer loop)
+./willie (outer loop)
     │
-    ├─ picks task from tasks.jsonl
+    ├─ picks task from .willie/tasks.jsonl
     ├─ creates branch
-    ├─ calls: claude "Read working.md and execute. TASK: [...] MODE: [...]"
+    ├─ calls: claude "Read .willie/working.md and execute. TASK: [...] MODE: [...]"
     ├─ Claude works, commits, updates task status
     ├─ squash merges on completion
     └─ repeats
@@ -30,10 +30,10 @@ willie.py (outer loop)
 ### 1. Initialize Your Project
 
 ```bash
-./init.sh
+./willie init
 ```
 
-This starts an interactive session where Claude helps you define your `idea.md`:
+This starts an interactive session where Claude helps you define `.willie/idea.md`:
 - **Goals** — What are you building? What problem does it solve?
 - **Constraints** — Development rules (TDD? Type hints? Code style?)
 - **Tech Stack** — Languages, frameworks, dependencies
@@ -48,27 +48,40 @@ This starts an interactive session where Claude helps you define your `idea.md`:
 ./willie -cd       # Both
 ```
 
-Willie reads `idea.md`, creates tasks automatically, and works through them.
+Willie reads `.willie/idea.md`, creates tasks automatically, and works through them.
 
 The wrapper script auto-creates a virtual environment on first run.
 
 ### Manual Task Creation (Optional)
 
-You can also add tasks directly to `tasks.jsonl`:
+You can also add tasks directly to `.willie/tasks.jsonl`:
 ```json
 {"id":"A","title":"your first task","status":"pending"}
 ```
 
-## Core Files
+## Project Structure
 
-| File | Purpose |
-|------|---------|
-| `willie.py` | External loop orchestrator |
-| `working.md` | Workflow instructions Claude reads each iteration |
-| `idea.md` | Project vision, goals, constraints |
-| `learnings.md` | Accumulated patterns and gotchas |
-| `tasks.jsonl` | Active tasks |
-| `tasks-done.jsonl` | Completed tasks archive |
+All Willie files live in `.willie/` to keep your project root clean:
+
+```
+your-project/
+├── willie                  # Entry point (run this)
+├── .willie/
+│   ├── willie.py           # Main loop orchestrator
+│   ├── working.md          # Workflow instructions
+│   ├── idea.md             # Project vision & goals
+│   ├── learnings.md        # Accumulated knowledge
+│   ├── tasks.jsonl         # Active tasks
+│   └── tasks-done.jsonl    # Completed tasks archive
+└── (your project files)
+```
+
+### Cleanup
+
+When your project is complete, remove Willie:
+```bash
+rm -rf .willie willie
+```
 
 ## Task Flow
 

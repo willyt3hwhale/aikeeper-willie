@@ -14,10 +14,13 @@ from pathlib import Path
 # --- Config ---
 MAX_ITERATIONS = 20
 POLL_INTERVAL = 5
-TASKS_FILE = Path("tasks.jsonl")
-DONE_FILE = Path("tasks-done.jsonl")
-LOG_FILE = Path("willie.log")
-INBOX_FILE = Path("inbox.txt")
+
+# All willie files live in .willie/ directory
+WILLIE_DIR = Path(__file__).parent
+TASKS_FILE = WILLIE_DIR / "tasks.jsonl"
+DONE_FILE = WILLIE_DIR / "tasks-done.jsonl"
+LOG_FILE = WILLIE_DIR / "willie.log"
+INBOX_FILE = Path("inbox.txt")  # inbox stays at project root for easy access
 
 # --- JSONL helpers ---
 
@@ -423,7 +426,7 @@ def build_prompt(task, mode, role=None, user_input=None):
     task_id = task['id']
     title = task['title']
 
-    parts = ["Read working.md and execute.", ""]
+    parts = ["Read .willie/working.md and execute.", ""]
 
     # User input (highest priority context)
     if user_input:
@@ -459,9 +462,9 @@ def build_completion_check_prompt():
         "The task list is empty. Verify the project is complete.",
         "",
         "## Instructions",
-        "1. Read idea.md to understand the project vision and success criteria",
+        "1. Read .willie/idea.md to understand the project vision and success criteria",
         "2. Review the codebase to assess what has been built",
-        "3. Compare against the goals and success criteria in idea.md",
+        "3. Compare against the goals and success criteria in .willie/idea.md",
         "",
         "## Decision",
         "- If the project meets all success criteria → respond with: PROJECT_COMPLETE",

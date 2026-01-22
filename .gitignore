@@ -1,6 +1,6 @@
-.venv/
+.willie/.venv/
+.willie/willie.log
+.willie/tasks-done.jsonl
 __pycache__/
 *.pyc
 .DS_Store
-willie.log
-tasks-done.jsonl

@@ -5,14 +5,14 @@
 git status              → uncommitted changes?
 git log --oneline -3    → what just happened?
 ```
-Read: idea.md (vision), learnings.md (knowledge), tasks.jsonl (context)
+Read: .willie/idea.md (vision), .willie/.willie/learnings.md (knowledge), .willie/tasks.jsonl (context)
 
 ## Evaluate Your Task
 
 A task is ready if: small (~20-50 lines, 1-3 files), single responsibility, no unknowns.
 
 **Don't understand it → RESEARCH**
-State the question. Investigate. Document in learnings.md. Split into subtasks.
+State the question. Investigate. Document in .willie/learnings.md. Split into subtasks.
 
 **Too big → SPLIT**
 Create subtasks (A → A.1, A.2). Check existing children for next ID.
@@ -28,18 +28,18 @@ All subtasks complete. Does the result meet the original goal?
 - Yes → mark complete
 - No → add more subtasks
 
-## tasks.jsonl
+## .willie/tasks.jsonl
 ```json
 {"id":"A.1","title":"do thing","status":"pending"}
 ```
 Statuses: `pending`, `active`, `complete`, `split`
 
 ## When Something Breaks
-Root cause first — don't repeat failed approaches. Fix, test, commit. Add gotcha to learnings.md.
+Root cause first — don't repeat failed approaches. Fix, test, commit. Add gotcha to .willie/learnings.md.
 
 ## After Work
-- Reusable pattern? → learnings.md "Patterns"
-- Gotcha? → learnings.md "Gotchas"
+- Reusable pattern? → .willie/learnings.md "Patterns"
+- Gotcha? → .willie/learnings.md "Gotchas"
 
 ## Rules
 - Commit often. Never leave uncommitted work.
