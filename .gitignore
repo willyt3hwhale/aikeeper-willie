@@ -1,6 +1,19 @@
-.willie/.venv/
-.willie/willie.log
-.willie/tasks-done.jsonl
+# Python
 __pycache__/
 *.pyc
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+.test-venv/
+
+# OS
 .DS_Store
+
+# Willie runtime files (in user projects)
+.willie/willie.log
+.willie/tasks-done.jsonl
+.willie/.venv/

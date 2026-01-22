@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aikeeper-willie"
+version = "0.1.0"
+description = "External orchestration loop for Claude Code"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+dependencies = [
+    "prompt_toolkit>=3.0.0",
+]
+
+[project.scripts]
+willie = "willie.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/willyt3hwhale/aikeeper-willie"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+willie = ["templates/*"]

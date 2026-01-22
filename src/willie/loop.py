@@ -1,7 +1,5 @@
-#!/usr/bin/env python3
-"""willie.py - external loop with task management"""
+"""Willie Loop - main loop logic."""
 
-import argparse
 import json
 import subprocess
 import sys
@@ -15,8 +13,8 @@ from pathlib import Path
 MAX_ITERATIONS = 20
 POLL_INTERVAL = 5
 
-# All willie files live in .willie/ directory
-WILLIE_DIR = Path(__file__).parent
+# All willie files live in .willie/ directory (in current working directory)
+WILLIE_DIR = Path(".willie")
 TASKS_FILE = WILLIE_DIR / "tasks.jsonl"
 DONE_FILE = WILLIE_DIR / "tasks-done.jsonl"
 LOG_FILE = WILLIE_DIR / "willie.log"
@@ -521,22 +519,17 @@ def build_completion_check_prompt():
 
 # --- Main loop ---
 
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Willie Loop - external orchestrator for Claude Code')
-    parser.add_argument('-c', '--console', action='store_true',
-                        help='Enable interactive console input')
-    parser.add_argument('-d', '--daemon', action='store_true',
-                        help='Run as daemon (poll forever instead of exiting when idle)')
-    return parser.parse_args()
+def main(console=False, daemon=False):
+    """Run the Willie loop.
 
-def main():
-    args = parse_args()
-
+    Args:
+        console: Enable interactive console input (TUI)
+        daemon: Run as daemon (poll forever instead of exiting when idle)
+    """
     base_branch = get_current_branch()
     log(f"Willie loop starting (base branch: {base_branch})")
 
-    if args.console:
+    if console:
         start_console_reader()
 
     waiting_logged = False
@@ -548,7 +541,7 @@ def main():
             Path('.stop').unlink()
             break
 
-        if args.console and console_quit:
+        if console and console_quit:
             log("Console quit signal received")
             break
 
@@ -558,7 +551,7 @@ def main():
         task, mode = get_next_task(tasks)
         if not task:
             # Check for user input that might create tasks
-            user_input = get_console_input() if args.console else None
+            user_input = get_console_input() if console else None
             inbox_input = read_inbox()
             if inbox_input:
                 user_input = f"{inbox_input}\n\n{user_input}" if user_input else inbox_input
@@ -577,7 +570,7 @@ If it's feedback about the project, incorporate it appropriately."""
                 run_claude(prompt)
                 continue
 
-            if args.daemon:
+            if daemon:
                 # Daemon mode: wait for new tasks (log once)
                 if not waiting_logged:
                     log("No tasks. Waiting... (type a message or add tasks)")
@@ -627,7 +620,7 @@ If it's feedback about the project, incorporate it appropriately."""
 
             # Check for user input (inbox file or console)
             user_input = read_inbox()
-            if args.console:
+            if console:
                 console = get_console_input()
                 if console:
                     if user_input:
@@ -710,8 +703,3 @@ If it's feedback about the project, incorporate it appropriately."""
             git('checkout', base_branch)
             log(f"Branch {branch} preserved for review")
 
-if __name__ == '__main__':
-    try:
-        main()
-    finally:
-        stop_console_reader()

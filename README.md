@@ -6,17 +6,17 @@ An external orchestration loop for Claude Code with task tracking, branch-per-ta
 
 Based on the [Ralph Wiggum](https://github.com/anthropics/claude-code/blob/main/.claude/skills/ralph-wiggum/ralph-loop.md) prompting technique — but run externally with persistent task state and clean git history.
 
-## How It Works
+## Installation
 
+```bash
+pip install aikeeper-willie
 ```
-./willie (outer loop)
-    │
-    ├─ picks task from .willie/tasks.jsonl
-    ├─ creates branch
-    ├─ calls: claude "Read .willie/working.md and execute. TASK: [...] MODE: [...]"
-    ├─ Claude works, commits, updates task status
-    ├─ squash merges on completion
-    └─ repeats
+
+Or install from source:
+```bash
+git clone https://github.com/willyt3hwhale/aikeeper-willie.git
+cd aikeeper-willie
+pip install -e .
 ```
 
 ## Requirements
@@ -27,10 +27,19 @@ Based on the [Ralph Wiggum](https://github.com/anthropics/claude-code/blob/main/
 
 ## Getting Started
 
-### 1. Initialize Your Project
+### 1. Initialize a Project
 
 ```bash
-./willie init
+cd your-project
+willie init
+```
+
+This creates a `.willie/` folder with workflow files.
+
+### 2. Define Your Project
+
+```bash
+willie edit
 ```
 
 This starts an interactive session where Claude helps you define `.willie/idea.md`:
@@ -39,40 +48,43 @@ This starts an interactive session where Claude helps you define `.willie/idea.m
 - **Tech Stack** — Languages, frameworks, dependencies
 - **Success Criteria** — How do you know when it's done?
 
-### 2. Run the Loop
+### 3. Run the Loop
 
 ```bash
-./willie           # Normal mode
-./willie -c        # With console input (TUI)
-./willie -d        # Daemon mode (poll forever)
-./willie -cd       # Both
+willie              # Normal mode
+willie -c           # With console input (TUI)
+willie -d           # Daemon mode (poll forever)
+willie -cd          # Both
 ```
 
 Willie reads `.willie/idea.md`, creates tasks automatically, and works through them.
 
-The wrapper script auto-creates a virtual environment on first run.
+## How It Works
 
-### Manual Task Creation (Optional)
-
-You can also add tasks directly to `.willie/tasks.jsonl`:
-```json
-{"id":"A","title":"your first task","status":"pending"}
+```
+willie (outer loop)
+    │
+    ├─ picks task from .willie/tasks.jsonl
+    ├─ creates branch
+    ├─ calls: claude "Read .willie/working.md and execute. TASK: [...] MODE: [...]"
+    ├─ Claude works, commits, updates task status
+    ├─ squash merges on completion
+    └─ repeats
 ```
 
 ## Project Structure
 
-All Willie files live in `.willie/` to keep your project root clean:
+After `willie init`, your project will have:
 
 ```
 your-project/
-├── willie                  # Entry point (run this)
 ├── .willie/
-│   ├── willie.py           # Main loop orchestrator
 │   ├── working.md          # Workflow instructions
 │   ├── idea.md             # Project vision & goals
 │   ├── learnings.md        # Accumulated knowledge
 │   ├── tasks.jsonl         # Active tasks
-│   └── tasks-done.jsonl    # Completed tasks archive
+│   ├── tasks-done.jsonl    # Completed tasks archive
+│   └── willie.log          # Full output log
 └── (your project files)
 ```
 
@@ -80,7 +92,7 @@ your-project/
 
 When your project is complete, remove Willie:
 ```bash
-rm -rf .willie willie
+rm -rf .willie
 ```
 
 ## Task Flow
