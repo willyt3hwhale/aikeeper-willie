@@ -464,7 +464,16 @@ def run_claude(prompt: str) -> int:
                                 """Format tool result, showing first N lines."""
                                 if not content:
                                     return None
+                                # Handle Task tool results (list of content blocks)
+                                if isinstance(content, list):
+                                    texts = []
+                                    for item in content:
+                                        if isinstance(item, dict) and item.get('type') == 'text':
+                                            texts.append(item.get('text', ''))
+                                    content = '\n'.join(texts) if texts else str(content)
                                 lines = str(content).split('\n')
+                                # Truncate very long lines
+                                lines = [line[:200] + '...' if len(line) > 200 else line for line in lines]
                                 if len(lines) <= max_lines:
                                     return '\n'.join(f"    {line}" for line in lines if line.strip())
                                 shown = '\n'.join(f"    {line}" for line in lines[:max_lines] if line.strip())
