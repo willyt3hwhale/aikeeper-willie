@@ -1,6 +1,8 @@
 """Willie Loop - main loop logic."""
 
+import fcntl
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -8,10 +10,24 @@ import time
 import os
 from datetime import date
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Any
+
+# --- Task Status Constants ---
+class TaskStatus:
+    PENDING = 'pending'
+    ACTIVE = 'active'
+    COMPLETE = 'complete'
+    SPLIT = 'split'
+    VALID = {PENDING, ACTIVE, COMPLETE, SPLIT}
 
 # --- Config ---
-MAX_ITERATIONS = 20
-POLL_INTERVAL = 5
+MAX_ITERATIONS = 20  # Max iterations per task before giving up
+POLL_INTERVAL = 5  # Seconds between polling in daemon mode
+CLAUDE_TIMEOUT = 3600  # Max seconds to wait for Claude (1 hour)
+SESSION_WAIT_TIMEOUT = 10  # Seconds to wait for Claude session file
+SESSION_CHECK_INTERVAL = 0.1  # Seconds between session file checks
+TOOL_OUTPUT_PREVIEW_LINES = 3  # Lines to show from tool output
+COMMAND_PREVIEW_LENGTH = 60  # Characters to show from bash commands
 
 # All willie files live in .willie/ directory (in current working directory)
 WILLIE_DIR = Path(".willie")
@@ -22,50 +38,91 @@ INBOX_FILE = Path("inbox.txt")  # inbox stays at project root for easy access
 
 # --- JSONL helpers ---
 
-def read_tasks():
-    """Read all tasks from JSONL file."""
+def validate_task(task: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate task has required fields. Returns task or raises ValueError."""
+    required = {'id', 'title', 'status'}
+    missing = required - set(task.keys())
+    if missing:
+        raise ValueError(f"Invalid task: missing {missing}. Got: {task}")
+    if task['status'] not in TaskStatus.VALID:
+        raise ValueError(f"Invalid status '{task['status']}'. Valid: {TaskStatus.VALID}")
+    return task
+
+def read_tasks() -> List[Dict[str, Any]]:
+    """Read all tasks from JSONL file with file locking."""
     if not TASKS_FILE.exists():
         return []
+    tasks = []
     with open(TASKS_FILE) as f:
-        return [json.loads(line) for line in f if line.strip()]
+        fcntl.flock(f.fileno(), fcntl.LOCK_SH)  # Shared lock for reading
+        try:
+            for line_num, line in enumerate(f, 1):
+                if not line.strip():
+                    continue
+                try:
+                    task = json.loads(line)
+                    validate_task(task)
+                    tasks.append(task)
+                except json.JSONDecodeError as e:
+                    log(f"WARNING: Invalid JSON on line {line_num}: {e}")
+                except ValueError as e:
+                    log(f"WARNING: {e}")
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    return tasks
 
-def write_tasks(tasks):
-    """Write all tasks back to JSONL file."""
-    with open(TASKS_FILE, 'w') as f:
-        for task in tasks:
-            f.write(json.dumps(task) + '\n')
+def write_tasks(tasks: List[Dict[str, Any]]) -> None:
+    """Write all tasks back to JSONL file with file locking (atomic write)."""
+    # Write to temp file first, then rename (atomic on POSIX)
+    temp_file = TASKS_FILE.with_suffix('.jsonl.tmp')
+    with open(temp_file, 'w') as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # Exclusive lock for writing
+        try:
+            for task in tasks:
+                f.write(json.dumps(task) + '\n')
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    temp_file.rename(TASKS_FILE)  # Atomic rename
 
-def append_done(task):
-    """Append completed task to done file."""
+def append_done(task: Dict[str, Any]) -> None:
+    """Append completed task to done file with file locking."""
     with open(DONE_FILE, 'a') as f:
-        f.write(json.dumps(task) + '\n')
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            f.write(json.dumps(task) + '\n')
+        finally:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
-def log(msg):
+def log(msg: str) -> None:
     """Log to console and file. Works with TUI (patch_stdout handles redirection)."""
     line = f"[{time.strftime('%H:%M:%S')}] {msg}"
     print(line)
     with open(LOG_FILE, 'a') as f:
         f.write(line + '\n')
 
-def read_inbox():
+def read_inbox() -> Optional[str]:
     """Read and clear the inbox file. Returns content or None."""
     if not INBOX_FILE.exists():
         return None
-    content = INBOX_FILE.read_text().strip()
-    if not content:
+    try:
+        content = INBOX_FILE.read_text().strip()
+        if not content:
+            return None
+        INBOX_FILE.unlink()  # Clear after reading
+        return content
+    except OSError as e:
+        log(f"WARNING: Error reading inbox: {e}")
         return None
-    INBOX_FILE.unlink()  # Clear after reading
-    return content
 
 # --- Console input (TUI) ---
 
-console_input_queue = []
+console_input_queue: List[str] = []
 console_lock = threading.Lock()
 console_quit = False
-prompt_session = None
-stdout_context = None
+prompt_session: Any = None
+stdout_context: Any = None
 
-def get_console_input():
+def get_console_input() -> Optional[str]:
     """Get and clear any pending console input."""
     with console_lock:
         if not console_input_queue:
@@ -75,7 +132,7 @@ def get_console_input():
         console_input_queue.clear()
         return result
 
-def console_reader_thread():
+def console_reader_thread() -> None:
     """Background thread to read console input with prompt_toolkit."""
     global prompt_session, console_quit
     try:
@@ -101,12 +158,12 @@ def console_reader_thread():
     except ImportError:
         print("prompt_toolkit not installed. Run: pip install prompt_toolkit")
 
-def strip_ansi(text):
+def strip_ansi(text: str) -> str:
     """Remove ANSI escape codes from text."""
     import re
     return re.sub(r'\033\[[0-9;]*m', '', text)
 
-def tui_print(msg, ansi=False):
+def tui_print(msg: str, ansi: bool = False) -> None:
     """Print message above the input line."""
     # Always log to file (strip ANSI codes)
     clean_msg = strip_ansi(msg) if ansi else msg
@@ -125,7 +182,7 @@ def tui_print(msg, ansi=False):
             pass
     print(f"[{time.strftime('%H:%M:%S')}] {msg}")
 
-def start_console_reader():
+def start_console_reader() -> None:
     """Start the TUI console reader."""
     try:
         from prompt_toolkit.patch_stdout import patch_stdout
@@ -140,7 +197,7 @@ def start_console_reader():
         print("prompt_toolkit not installed. Run: pip install prompt_toolkit")
         print("Falling back to inbox.txt only.")
 
-def stop_console_reader():
+def stop_console_reader() -> None:
     """Clean up the TUI console reader."""
     global stdout_context
     if stdout_context:
@@ -154,14 +211,14 @@ def stop_console_reader():
 
 # --- Task operations ---
 
-def get_children(tasks, parent_id):
+def get_children(tasks: List[Dict[str, Any]], parent_id: str) -> List[Dict[str, Any]]:
     """Get direct children of a task (A → A.1, A.2, not A.1.1)."""
     prefix = parent_id + '.'
     parent_depth = parent_id.count('.')
     return [t for t in tasks if t['id'].startswith(prefix)
             and t['id'].count('.') == parent_depth + 1]
 
-def get_next_task(tasks):
+def get_next_task(tasks: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """Find next task to work on.
 
     Priority:
@@ -171,24 +228,24 @@ def get_next_task(tasks):
     """
     # First: resume any active task (crash recovery)
     for task in tasks:
-        if task.get('status') == 'active':
+        if task.get('status') == TaskStatus.ACTIVE:
             return task, 'work'
 
     # Second: any pending tasks
     for task in tasks:
-        if task.get('status') == 'pending':
+        if task.get('status') == TaskStatus.PENDING:
             return task, 'work'
 
     # Third: split tasks ready for verification
     for task in tasks:
-        if task.get('status') == 'split':
+        if task.get('status') == TaskStatus.SPLIT:
             children = get_children(tasks, task['id'])
-            if children and all(c.get('status') == 'complete' for c in children):
+            if children and all(c.get('status') == TaskStatus.COMPLETE for c in children):
                 return task, 'verify'
 
     return None, None
 
-def update_task_status(tasks, task_id, status):
+def update_task_status(tasks: List[Dict[str, Any]], task_id: str, status: str) -> None:
     """Update a task's status in place."""
     for task in tasks:
         if task['id'] == task_id:
@@ -196,23 +253,23 @@ def update_task_status(tasks, task_id, status):
             break
     write_tasks(tasks)
 
-def get_task_by_id(tasks, task_id):
+def get_task_by_id(tasks: List[Dict[str, Any]], task_id: str) -> Optional[Dict[str, Any]]:
     """Find task by ID."""
     for task in tasks:
         if task['id'] == task_id:
             return task
     return None
 
-def get_all_descendants(tasks, parent_id):
+def get_all_descendants(tasks: List[Dict[str, Any]], parent_id: str) -> List[Dict[str, Any]]:
     """Get all descendants of a task (children, grandchildren, etc.)."""
     prefix = parent_id + '.'
     return [t for t in tasks if t['id'].startswith(prefix)]
 
-def is_root_task(task_id):
+def is_root_task(task_id: str) -> bool:
     """Check if task is a root (no dots in ID)."""
     return '.' not in task_id
 
-def archive_task_tree(tasks, task_id, commit_hash):
+def archive_task_tree(tasks: List[Dict[str, Any]], task_id: str, commit_hash: str) -> List[Dict[str, Any]]:
     """Archive a completed root task and all its descendants.
 
     Only called for root tasks. Children stay in tasks.jsonl until
@@ -241,42 +298,54 @@ def archive_task_tree(tasks, task_id, commit_hash):
 
     return tasks
 
-def mark_task_complete(tasks, task_id):
+def mark_task_complete(tasks: List[Dict[str, Any]], task_id: str) -> List[Dict[str, Any]]:
     """Mark a task as complete (but don't archive yet if it has a parent)."""
     for task in tasks:
         if task['id'] == task_id:
-            task['status'] = 'complete'
+            task['status'] = TaskStatus.COMPLETE
             break
     write_tasks(tasks)
     return tasks
 
 # --- Git operations ---
 
-def git(*args):
-    """Run git command, return (exit_code, stdout)."""
+def git(*args: str) -> Tuple[int, str, str]:
+    """Run git command, return (exit_code, stdout, stderr)."""
     result = subprocess.run(['git'] + list(args), capture_output=True, text=True)
-    return result.returncode, result.stdout.strip()
+    if result.returncode != 0 and result.stderr:
+        log(f"Git warning: {result.stderr.strip()}")
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
 
-def get_current_branch():
+def check_git_repo() -> bool:
+    """Check if we're in a git repository."""
+    code, _, _ = git('rev-parse', '--git-dir')
+    return code == 0
+
+def get_current_branch() -> str:
     """Get the current git branch name."""
-    _, branch = git('branch', '--show-current')
+    code, branch, stderr = git('branch', '--show-current')
+    if code != 0 or not branch:
+        log(f"ERROR: Could not determine current branch. Are you in a git repo?")
+        if stderr:
+            log(f"  Git error: {stderr}")
+        sys.exit(1)
     return branch
 
-def slugify(text):
+def slugify(text: str) -> str:
     """Convert text to branch-safe slug."""
     slug = text.lower().replace(' ', '-')
     return ''.join(c for c in slug if c.isalnum() or c == '-')[:30]
 
-def create_branch(task_id, title):
+def create_branch(task_id: str, title: str) -> str:
     """Create and checkout task branch. If it exists, just check it out."""
     branch = f"task/{task_id}-{slugify(title)}"
-    code, _ = git('checkout', '-b', branch)
+    code, _, _ = git('checkout', '-b', branch)
     if code != 0:
         # Branch exists, just check it out
         git('checkout', branch)
     return branch
 
-def squash_merge(branch, task_id, title, base_branch):
+def squash_merge(branch: str, task_id: str, title: str, base_branch: str) -> str:
     """Squash merge branch to base_branch, return commit hash."""
     git('checkout', base_branch)
     git('merge', '--squash', branch)
@@ -284,23 +353,32 @@ def squash_merge(branch, task_id, title, base_branch):
     message = f"[{task_id}] {title}\n\nCompletes: {task_id}"
     git('commit', '-m', message)
 
-    _, commit_hash = git('rev-parse', '--short', 'HEAD')
+    _, commit_hash, _ = git('rev-parse', '--short', 'HEAD')
 
     # Clean up branch (local and remote)
-    git('branch', '-D', branch)
-    git('push', 'origin', '--delete', branch)  # ignore if not pushed
+    code, _, stderr = git('branch', '-D', branch)
+    if code != 0:
+        log(f"WARNING: Failed to delete local branch {branch}: {stderr}")
+
+    code, _, stderr = git('push', 'origin', '--delete', branch)
+    if code != 0 and 'remote ref does not exist' not in stderr:
+        log(f"WARNING: Failed to delete remote branch {branch}: {stderr}")
 
     return commit_hash
 
 # --- Claude execution ---
 
-def get_session_dir():
+def check_claude_installed() -> bool:
+    """Check if Claude CLI is installed."""
+    return shutil.which('claude') is not None
+
+def get_session_dir() -> Path:
     """Get Claude's session directory for this project."""
     cwd = os.getcwd().replace('/', '-')
     return Path.home() / '.claude' / 'projects' / cwd
 
 
-def run_claude(prompt):
+def run_claude(prompt: str) -> int:
     """Run claude, streaming output by watching session files."""
     import json as json_module
     import glob
@@ -320,21 +398,31 @@ def run_claude(prompt):
         stderr=subprocess.DEVNULL,
     )
 
-    # Find the new session file (wait up to 10 seconds)
+    # Find the new session file
     new_session = None
-    for _ in range(100):
+    wait_iterations = int(SESSION_WAIT_TIMEOUT / SESSION_CHECK_INTERVAL)
+    for _ in range(wait_iterations):
         current = set(glob.glob(str(session_dir / '*.jsonl')))
         new_files = current - existing
         if new_files:
             new_session = max(new_files, key=lambda f: os.path.getmtime(f))
             break
-        time.sleep(0.1)
+        time.sleep(SESSION_CHECK_INTERVAL)
 
     if not new_session:
         # Session file not found - Claude might use a different session dir
-        # Just wait for the process without streaming
+        # Just wait for the process without streaming (with timeout)
         log("(streaming unavailable, waiting for Claude...)")
-        process.wait()
+        try:
+            process.wait(timeout=CLAUDE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            log(f"ERROR: Claude timed out after {CLAUDE_TIMEOUT}s, terminating...")
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            return 1
         return process.returncode
 
     # Track what we've already printed
@@ -366,7 +454,7 @@ def run_claude(prompt):
                             def cprint(s):
                                 tui_print(s, ansi=True)
 
-                            def format_tool_result(content, max_lines=3):
+                            def format_tool_result(content: Any, max_lines: int = TOOL_OUTPUT_PREVIEW_LINES) -> Optional[str]:
                                 """Format tool result, showing first N lines."""
                                 if not content:
                                     return None
@@ -413,7 +501,7 @@ def run_claude(prompt):
                                             arg = inp.get('file_path', '')
                                             cprint(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}")
                                         elif tool == 'Bash':
-                                            arg = inp.get('command', '')[:60]
+                                            arg = inp.get('command', '')[:COMMAND_PREVIEW_LENGTH]
                                             cprint(f"{YELLOW}  → {tool}{RESET} {DIM}{arg}{RESET}")
                                         elif tool == 'Glob':
                                             arg = inp.get('pattern', '')
@@ -458,24 +546,32 @@ def run_claude(prompt):
     process.wait()
     return process.returncode
 
-# --- Role triggers (stub) ---
+# --- Role triggers ---
 
-def evaluate_triggers(task, iteration, mode):
-    """Evaluate role triggers, return role name or None."""
-    # TODO: implement trigger logic
-    # - check branch commit count
-    # - check iteration count
-    # - check task properties
-    # - mode == 'verify' might trigger reviewer role
+def evaluate_triggers(task: Dict[str, Any], iteration: int, mode: str) -> Optional[str]:
+    """Evaluate role triggers, return role name or None.
+
+    Provides specialized roles based on context:
+    - Reviewer: After many iterations, get a fresh perspective
+    - Architect: During verification, validate design integrity
+    """
+    # After 5+ iterations on same task, bring in reviewer perspective
+    if iteration >= 5 and mode == 'work':
+        return 'Code Reviewer - provide fresh perspective on approach'
+
+    # Verification mode benefits from architect thinking
+    if mode == 'verify':
+        return 'Architect - verify design meets original goals'
+
     return None
 
-def build_prompt(task, mode, role=None, user_input=None):
+def build_prompt(task: Dict[str, Any], mode: str, role: Optional[str] = None, user_input: Optional[str] = None) -> str:
     """Build prompt based on task and mode.
 
     mode: 'work' (normal task) or 'verify' (split task, children complete)
     """
-    task_id = task['id']
-    title = task['title']
+    task_id = task.get('id', 'UNKNOWN')
+    title = task.get('title', 'UNKNOWN')
 
     parts = ["Read .willie/working.md and execute.", ""]
 
@@ -507,36 +603,52 @@ def build_prompt(task, mode, role=None, user_input=None):
     return "\n".join(parts)
 
 
-def build_completion_check_prompt():
+def build_completion_check_prompt() -> str:
     """Build prompt for verifying project completion when task list is empty."""
     parts = [
         "The task list is empty. Verify the project is complete.",
         "",
+        "## Context Files (read in order)",
+        "1. .willie/working.md - understand how we work",
+        "2. .willie/learnings.md - what we learned during development",
+        "3. .willie/idea.md - project vision and success criteria",
+        "",
         "## Instructions",
-        "1. Read .willie/idea.md to understand the project vision and success criteria",
-        "2. Review the codebase to assess what has been built",
-        "3. Compare against the goals and success criteria in .willie/idea.md",
+        "1. Review the codebase to assess what has been built",
+        "2. Compare against ALL goals and success criteria in .willie/idea.md",
+        "3. Test or verify that success criteria are actually met, not just implemented",
         "",
         "## Decision",
-        "- If the project meets all success criteria → respond with: PROJECT_COMPLETE",
-        "- If gaps remain → add new tasks to .willie/tasks.jsonl for missing work",
+        "- If ALL success criteria are met → respond with: PROJECT_COMPLETE",
+        "- If ANY gaps remain → add new tasks to .willie/tasks.jsonl",
         "",
-        "## Task Format",
-        'Tasks MUST include status field: {"id": "1", "title": "...", "status": "pending"}',
+        "## Task Format (REQUIRED)",
+        'Each task MUST have id, title, and status: {"id": "1", "title": "...", "status": "pending"}',
         "",
-        "Be thorough. Check that all goals are met, not just some.",
+        "Be thorough and critical. A project is only complete when ALL criteria are verified.",
     ]
     return "\n".join(parts)
 
 # --- Main loop ---
 
-def main(console=False, daemon=False):
+def main(console: bool = False, daemon: bool = False) -> None:
     """Run the Willie loop.
 
     Args:
         console: Enable interactive console input (TUI)
         daemon: Run as daemon (poll forever instead of exiting when idle)
     """
+    # Startup checks
+    if not check_claude_installed():
+        print("ERROR: 'claude' command not found.")
+        print("Install Claude Code CLI: https://docs.anthropic.com/en/docs/claude-code")
+        sys.exit(1)
+
+    if not check_git_repo():
+        print("ERROR: Not in a git repository.")
+        print("Run 'git init' first, then try again.")
+        sys.exit(1)
+
     base_branch = get_current_branch()
     log(f"Willie loop starting (base branch: {base_branch})")
 
@@ -664,11 +776,11 @@ If it's feedback about the project, incorporate it appropriately."""
 
             status = current.get('status')
 
-            if status == 'complete':
+            if status == TaskStatus.COMPLETE:
                 log(f"Task {task_id} marked complete")
                 task_done = True
                 break
-            elif status == 'split':
+            elif status == TaskStatus.SPLIT:
                 log(f"Task {task_id} was split into subtasks")
                 task_done = True  # This task is "done" (decomposed)
                 break
@@ -683,7 +795,7 @@ If it's feedback about the project, incorporate it appropriately."""
         tasks = read_tasks()
         current = get_task_by_id(tasks, task_id)
 
-        if current and current.get('status') == 'complete':
+        if current and current.get('status') == TaskStatus.COMPLETE:
             commit_hash = squash_merge(branch, task_id, title, base_branch)
 
             if is_root_task(task_id):
@@ -696,17 +808,21 @@ If it's feedback about the project, incorporate it appropriately."""
                 write_tasks(tasks)
                 log(f"=== Completed: [{task_id}] {title} ({commit_hash}) ===")
 
-        elif current and current.get('status') == 'split':
+        elif current and current.get('status') == TaskStatus.SPLIT:
             # Task was split - merge what we have, but don't archive
             # Children will be worked on in subsequent iterations
             git('checkout', base_branch)
-            code, _ = git('diff', '--cached', '--quiet')
+            code, _, _ = git('diff', '--cached', '--quiet')
             if code != 0:  # There are staged changes
                 git('merge', '--squash', branch)
                 git('commit', '-m', f"[{task_id}] Split into subtasks")
             # Clean up branch (local and remote)
-            git('branch', '-D', branch)
-            git('push', 'origin', '--delete', branch)
+            code, _, stderr = git('branch', '-D', branch)
+            if code != 0:
+                log(f"WARNING: Failed to delete local branch {branch}")
+            code, _, stderr = git('push', 'origin', '--delete', branch)
+            if code != 0 and 'remote ref does not exist' not in stderr:
+                log(f"WARNING: Failed to delete remote branch {branch}")
             log(f"=== Split: [{task_id}] - children pending ===")
 
         else:

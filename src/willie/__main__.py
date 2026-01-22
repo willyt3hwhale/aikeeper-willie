@@ -6,15 +6,39 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 WILLIE_DIR = Path(".willie")
+
+
+def check_claude_installed() -> bool:
+    """Check if Claude CLI is installed."""
+    return shutil.which('claude') is not None
+
+
+def check_git_repo() -> bool:
+    """Check if we're in a git repository."""
+    result = subprocess.run(['git', 'rev-parse', '--git-dir'],
+                          capture_output=True, text=True)
+    return result.returncode == 0
 
 def get_templates_dir():
     """Get the path to bundled template files."""
     return Path(__file__).parent / "templates"
 
-def cmd_init():
+def cmd_init() -> None:
     """Initialize a Willie project in the current directory."""
+    # Check prerequisites
+    if not check_claude_installed():
+        print("Error: 'claude' command not found.")
+        print("Install Claude Code CLI: https://docs.anthropic.com/en/docs/claude-code")
+        sys.exit(1)
+
+    if not check_git_repo():
+        print("Error: Not in a git repository.")
+        print("Run 'git init' first, then try again.")
+        sys.exit(1)
+
     if WILLIE_DIR.exists():
         print(f"Error: {WILLIE_DIR} already exists. Already initialized?")
         sys.exit(1)
@@ -44,13 +68,20 @@ def cmd_init():
     working_file = WILLIE_DIR / "working.md"
     prompt = f"Read {working_file} and help me define {idea_file} with my project idea. Ask me questions until you're 99% sure about what I want to build. Cover: goals, constraints, tech stack, and success criteria."
 
-    subprocess.run(["claude", prompt])
+    result = subprocess.run(["claude", prompt])
+    if result.returncode != 0:
+        print(f"Warning: Claude exited with code {result.returncode}")
 
     print()
     print("Willie initialized! Run 'willie' to start the loop.")
 
-def cmd_edit():
+def cmd_edit() -> None:
     """Open interactive session to define idea.md."""
+    if not check_claude_installed():
+        print("Error: 'claude' command not found.")
+        print("Install Claude Code CLI: https://docs.anthropic.com/en/docs/claude-code")
+        sys.exit(1)
+
     if not WILLIE_DIR.exists():
         print("Error: Not a Willie project. Run 'willie init' first.")
         sys.exit(1)
@@ -60,9 +91,11 @@ def cmd_edit():
 
     prompt = f"Read {working_file} and help me define {idea_file} with my project idea. Ask me questions until you're 99% sure about what I want to build. Cover: goals, constraints, tech stack, and success criteria."
 
-    subprocess.run(["claude", prompt])
+    result = subprocess.run(["claude", prompt])
+    if result.returncode != 0:
+        print(f"Warning: Claude exited with code {result.returncode}")
 
-def cmd_run(args):
+def cmd_run(args: Any) -> None:
     """Run the Willie loop."""
     if not WILLIE_DIR.exists():
         print("Error: Not a Willie project. Run 'willie init' first.")
@@ -74,7 +107,7 @@ def cmd_run(args):
     finally:
         stop_console_reader()
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Willie Loop - External orchestration loop for Claude Code"
     )
