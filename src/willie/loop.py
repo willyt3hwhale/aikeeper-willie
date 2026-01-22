@@ -380,6 +380,8 @@ def run_claude(prompt):
                             if msg_type == 'user':
                                 content = msg.get('message', {}).get('content', [])
                                 for block in content:
+                                    if not isinstance(block, dict):
+                                        continue
                                     if block.get('type') == 'tool_result':
                                         result = block.get('content', '')
                                         if result:
@@ -391,6 +393,8 @@ def run_claude(prompt):
                             if msg_type == 'assistant':
                                 content = msg.get('message', {}).get('content', [])
                                 for block in content:
+                                    if not isinstance(block, dict):
+                                        continue
                                     if block.get('type') == 'text':
                                         text = block.get('text', '')
                                         if text:
@@ -515,7 +519,7 @@ def build_completion_check_prompt():
         "",
         "## Decision",
         "- If the project meets all success criteria → respond with: PROJECT_COMPLETE",
-        "- If gaps remain → add new tasks to tasks.jsonl for missing work",
+        "- If gaps remain → add new tasks to .willie/tasks.jsonl for missing work",
         "",
         "Be thorough. Check that all goals are met, not just some.",
         "If adding tasks, ensure they are specific and actionable.",

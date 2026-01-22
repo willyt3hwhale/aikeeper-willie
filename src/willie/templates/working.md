@@ -5,7 +5,7 @@
 git status              → uncommitted changes?
 git log --oneline -3    → what just happened?
 ```
-Read: .willie/idea.md (vision), .willie/.willie/learnings.md (knowledge), .willie/tasks.jsonl (context)
+Read: .willie/idea.md (vision), .willie/learnings.md (knowledge), .willie/tasks.jsonl (context)
 
 ## Evaluate Your Task
 
