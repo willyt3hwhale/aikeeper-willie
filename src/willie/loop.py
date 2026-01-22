@@ -309,12 +309,17 @@ def mark_task_complete(tasks: List[Dict[str, Any]], task_id: str) -> List[Dict[s
 
 # --- Git operations ---
 
-def git(*args: str) -> Tuple[int, str, str]:
-    """Run git command, return (exit_code, stdout, stderr)."""
+def git(*args: str, quiet: bool = False) -> Tuple[int, str, str]:
+    """Run git command, return (exit_code, stdout, stderr). Set quiet=True to suppress warnings."""
     result = subprocess.run(['git'] + list(args), capture_output=True, text=True)
-    if result.returncode != 0 and result.stderr:
+    if result.returncode != 0 and result.stderr and not quiet:
         log(f"Git warning: {result.stderr.strip()}")
     return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+def has_remote(name: str = 'origin') -> bool:
+    """Check if a remote exists."""
+    code, _, _ = git('remote', 'get-url', name, quiet=True)
+    return code == 0
 
 def check_git_repo() -> bool:
     """Check if we're in a git repository."""
@@ -356,13 +361,14 @@ def squash_merge(branch: str, task_id: str, title: str, base_branch: str) -> str
     _, commit_hash, _ = git('rev-parse', '--short', 'HEAD')
 
     # Clean up branch (local and remote)
-    code, _, stderr = git('branch', '-D', branch)
-    if code != 0:
+    code, _, stderr = git('branch', '-D', branch, quiet=True)
+    if code != 0 and 'cannot delete branch' not in stderr:
         log(f"WARNING: Failed to delete local branch {branch}: {stderr}")
 
-    code, _, stderr = git('push', 'origin', '--delete', branch)
-    if code != 0 and 'remote ref does not exist' not in stderr:
-        log(f"WARNING: Failed to delete remote branch {branch}: {stderr}")
+    if has_remote():
+        code, _, stderr = git('push', 'origin', '--delete', branch, quiet=True)
+        if code != 0 and 'remote ref does not exist' not in stderr:
+            log(f"WARNING: Failed to delete remote branch {branch}: {stderr}")
 
     return commit_hash
 
@@ -821,12 +827,13 @@ If it's feedback about the project, incorporate it appropriately."""
                 git('merge', '--squash', branch)
                 git('commit', '-m', f"[{task_id}] Split into subtasks")
             # Clean up branch (local and remote)
-            code, _, stderr = git('branch', '-D', branch)
-            if code != 0:
+            code, _, stderr = git('branch', '-D', branch, quiet=True)
+            if code != 0 and 'cannot delete branch' not in stderr:
                 log(f"WARNING: Failed to delete local branch {branch}")
-            code, _, stderr = git('push', 'origin', '--delete', branch)
-            if code != 0 and 'remote ref does not exist' not in stderr:
-                log(f"WARNING: Failed to delete remote branch {branch}")
+            if has_remote():
+                code, _, stderr = git('push', 'origin', '--delete', branch, quiet=True)
+                if code != 0 and 'remote ref does not exist' not in stderr:
+                    log(f"WARNING: Failed to delete remote branch {branch}")
             log(f"=== Split: [{task_id}] - children pending ===")
 
         else:
