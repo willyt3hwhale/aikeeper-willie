@@ -853,12 +853,12 @@ If it's feedback about the project, incorporate it appropriately."""
             # Check for user input (inbox file or console)
             user_input = read_inbox()
             if console:
-                console = get_console_input()
-                if console:
+                console_msg = get_console_input()
+                if console_msg:
                     if user_input:
-                        user_input = f"{user_input}\n\n{console}"
+                        user_input = f"{user_input}\n\n{console_msg}"
                     else:
-                        user_input = console
+                        user_input = console_msg
             if user_input:
                 log(f"User input received: {user_input[:50]}...")
 
