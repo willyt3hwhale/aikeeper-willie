@@ -1,5 +1,11 @@
 # Willie Loop Workflow
 
+**You are running in an autonomous loop. There is no human to ask questions.**
+- Do NOT use AskUserQuestion or any interactive prompts
+- Make decisions yourself based on idea.md and context
+- If uncertain, make the simplest reasonable choice and document it
+- If blocked, split the task or add a task to investigate
+
 ## Orient
 ```
 git status              → uncommitted changes?

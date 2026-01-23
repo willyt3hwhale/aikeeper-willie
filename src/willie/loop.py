@@ -2,6 +2,7 @@
 
 import fcntl
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,78 @@ TASKS_FILE = WILLIE_DIR / "tasks.jsonl"
 DONE_FILE = WILLIE_DIR / "tasks-done.jsonl"
 LOG_FILE = WILLIE_DIR / "willie.log"
 INBOX_FILE = Path("inbox.txt")  # inbox stays at project root for easy access
+IDEA_FILE = WILLIE_DIR / "idea.md"
+WORKING_FILE = WILLIE_DIR / "working.md"
+
+# --- Project State Detection ---
+
+def is_idea_template() -> bool:
+    """Check if idea.md is still the unfilled template.
+
+    Returns True if idea.md only contains template placeholders (HTML comments)
+    with no actual content filled in.
+    """
+    if not IDEA_FILE.exists():
+        return True
+
+    content = IDEA_FILE.read_text()
+    # Strip HTML comments and whitespace
+    stripped = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
+    stripped = re.sub(r'#.*\n', '', stripped)  # Remove headers
+    stripped = stripped.strip()
+
+    # If nothing left, it's still the template
+    return len(stripped) == 0
+
+
+def is_project_never_started() -> bool:
+    """Check if project was defined but never started.
+
+    Returns True if idea.md has content but no tasks exist and no work
+    has been completed (tasks-done.jsonl missing or empty).
+    """
+    if is_idea_template():
+        return False  # Not even defined yet
+
+    # Check if any work has been done
+    if DONE_FILE.exists() and DONE_FILE.stat().st_size > 0:
+        return False  # Has completed tasks
+
+    # Check if tasks exist
+    if TASKS_FILE.exists() and TASKS_FILE.stat().st_size > 0:
+        return False  # Has pending tasks
+
+    return True  # Idea defined but no tasks created
+
+
+def create_bootstrap_task() -> None:
+    """Create initial bootstrap task to break down idea.md into tasks."""
+    bootstrap = {"id": "0", "title": "Read idea.md and create initial task breakdown", "status": "pending"}
+    with open(TASKS_FILE, 'w') as f:
+        f.write(json.dumps(bootstrap) + '\n')
+
+
+def build_init_prompt() -> str:
+    """Build prompt for initializing idea.md when project wasn't set up."""
+    return f"""The project was initialized but idea.md was never filled in.
+
+Read {WORKING_FILE} to understand how we work, then help define {IDEA_FILE}.
+
+Use the AskUserQuestion tool to ask questions one at a time until you're 99% sure about what they want to build.
+
+Cover these topics:
+- Goals: What are they building? What problem does it solve?
+- Tech stack: Languages, frameworks, key dependencies
+- Development workflow: TDD? Testing requirements? Code style?
+- Constraints: Any rules, limitations, or standards
+- Success criteria: How do we know when it's done?
+
+After gathering all answers, write the complete {IDEA_FILE} file.
+
+Then create an initial task in tasks.jsonl based on the project goals.
+Use the Write tool (NOT bash/echo) to write the task:
+{{"id": "1", "title": "Set up project structure", "status": "pending"}}"""
+
 
 # --- JSONL helpers ---
 
@@ -712,6 +785,12 @@ If it's feedback about the project, incorporate it appropriately."""
                 run_claude(prompt)
                 continue
 
+            # Check if project needs bootstrapping (idea defined but never started)
+            if is_project_never_started():
+                log("Project defined but no tasks. Creating bootstrap task...")
+                create_bootstrap_task()
+                continue
+
             if daemon:
                 # Daemon mode: wait for new tasks (log once)
                 if not waiting_logged:
@@ -720,6 +799,17 @@ If it's feedback about the project, incorporate it appropriately."""
                 time.sleep(POLL_INTERVAL)
                 continue
             else:
+                # Check if project was never properly initialized
+                if is_idea_template():
+                    log("Project not initialized. Running setup...")
+                    prompt = build_init_prompt()
+                    exit_code = run_claude(prompt)
+
+                    if exit_code != 0:
+                        log(f"Claude exited with code {exit_code}, retrying...")
+                        time.sleep(5)
+                    continue
+
                 # Normal mode: verify project completion against idea.md
                 log("Task list empty. Verifying project completion...")
 
