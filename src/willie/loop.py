@@ -892,11 +892,12 @@ If it's feedback about the project, incorporate it appropriately."""
                 if is_idea_template():
                     log("Project not initialized. Running setup...")
                     prompt = build_init_prompt()
-                    exit_code = run_claude(prompt)
+                    exit_code, error_type, _ = run_claude_with_retry(prompt)
 
                     if exit_code != 0:
-                        log(f"Claude exited with code {exit_code}, retrying...")
-                        time.sleep(5)
+                        if error_type == ClaudeError.TOKEN_LIMIT:
+                            log("Cannot continue - out of tokens/credits")
+                            break
                     continue
 
                 # Normal mode: verify project completion against idea.md
