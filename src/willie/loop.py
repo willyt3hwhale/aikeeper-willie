@@ -29,6 +29,17 @@ SESSION_WAIT_TIMEOUT = 10  # Seconds to wait for Claude session file
 SESSION_CHECK_INTERVAL = 0.1  # Seconds between session file checks
 TOOL_OUTPUT_PREVIEW_LINES = 3  # Lines to show from tool output
 COMMAND_PREVIEW_LENGTH = 60  # Characters to show from bash commands
+API_RETRY_DELAYS = [5, 15, 30, 60]  # Exponential backoff for API errors
+RATE_LIMIT_WAIT = 300  # 5 minutes wait for rate limits
+
+# --- Error Types ---
+class ClaudeError:
+    NONE = 'none'
+    API_ERROR = 'api_error'  # 500, transient errors
+    RATE_LIMIT = 'rate_limit'  # Too many requests
+    TOKEN_LIMIT = 'token_limit'  # Out of tokens/credits
+    TIMEOUT = 'timeout'
+    UNKNOWN = 'unknown'
 
 # All willie files live in .willie/ directory (in current working directory)
 WILLIE_DIR = Path(".willie")
@@ -457,8 +468,25 @@ def get_session_dir() -> Path:
     return Path.home() / '.claude' / 'projects' / cwd
 
 
-def run_claude(prompt: str) -> int:
-    """Run claude, streaming output by watching session files."""
+def detect_error_type(stderr: str) -> Tuple[str, str]:
+    """Parse stderr to detect error type. Returns (error_type, message)."""
+    stderr_lower = stderr.lower()
+    if not stderr.strip():
+        return ClaudeError.NONE, ''
+    if 'rate limit' in stderr_lower or '429' in stderr:
+        return ClaudeError.RATE_LIMIT, stderr
+    if 'insufficient' in stderr_lower or 'credit' in stderr_lower or 'quota' in stderr_lower:
+        return ClaudeError.TOKEN_LIMIT, stderr
+    if '500' in stderr or 'internal server error' in stderr_lower or 'api_error' in stderr_lower:
+        return ClaudeError.API_ERROR, stderr
+    if 'timeout' in stderr_lower:
+        return ClaudeError.TIMEOUT, stderr
+    return ClaudeError.UNKNOWN, stderr
+
+
+def run_claude(prompt: str) -> Tuple[int, str, str]:
+    """Run claude, streaming output by watching session files.
+    Returns (exit_code, error_type, error_message)."""
     import json as json_module
     import glob
 
@@ -470,12 +498,26 @@ def run_claude(prompt: str) -> int:
     # Note existing session files before starting
     existing = set(glob.glob(str(session_dir / '*.jsonl')))
 
+    # Capture stderr for error detection
+    stderr_lines: List[str] = []
+
+    def read_stderr(pipe):
+        for line in iter(pipe.readline, ''):
+            stderr_lines.append(line)
+        pipe.close()
+
     # Start Claude (no streaming flags needed - we read session files)
     process = subprocess.Popen(
         ['claude', '-p', prompt, '--dangerously-skip-permissions'],
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
     )
+
+    # Read stderr in background thread
+    stderr_thread = threading.Thread(target=read_stderr, args=(process.stderr,))
+    stderr_thread.daemon = True
+    stderr_thread.start()
 
     # Find the new session file
     new_session = None
@@ -501,8 +543,11 @@ def run_claude(prompt: str) -> int:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 process.kill()
-            return 1
-        return process.returncode
+            return 1, ClaudeError.TIMEOUT, "Claude timed out"
+        stderr_thread.join(timeout=1)
+        stderr_text = ''.join(stderr_lines)
+        error_type, error_msg = detect_error_type(stderr_text)
+        return process.returncode, error_type, error_msg
 
     # Track what we've already printed
     printed_messages = set()
@@ -632,7 +677,51 @@ def run_claude(prompt: str) -> int:
 
     tui_print("", ansi=True)  # blank line
     process.wait()
-    return process.returncode
+    stderr_thread.join(timeout=1)
+    stderr_text = ''.join(stderr_lines)
+    error_type, error_msg = detect_error_type(stderr_text)
+    return process.returncode, error_type, error_msg
+
+
+def run_claude_with_retry(prompt: str) -> Tuple[int, str, str]:
+    """Run Claude with automatic retry for transient errors.
+    Returns (exit_code, error_type, error_message)."""
+    for attempt, delay in enumerate(API_RETRY_DELAYS + [0]):  # +[0] for final attempt
+        exit_code, error_type, error_msg = run_claude(prompt)
+
+        if exit_code == 0:
+            return exit_code, error_type, error_msg
+
+        # Handle different error types
+        if error_type == ClaudeError.RATE_LIMIT:
+            log(f"Rate limited. Waiting {RATE_LIMIT_WAIT}s before retry...")
+            time.sleep(RATE_LIMIT_WAIT)
+            continue
+        elif error_type == ClaudeError.TOKEN_LIMIT:
+            log(f"ERROR: Token/credit limit reached: {error_msg}")
+            return exit_code, error_type, error_msg  # Don't retry
+        elif error_type == ClaudeError.API_ERROR:
+            if delay > 0:
+                log(f"API error (attempt {attempt + 1}/{len(API_RETRY_DELAYS)}). Retrying in {delay}s...")
+                time.sleep(delay)
+                continue
+            else:
+                log(f"API error persists after {len(API_RETRY_DELAYS)} retries")
+                return exit_code, error_type, error_msg
+        elif error_type == ClaudeError.TIMEOUT:
+            log(f"Claude timed out")
+            return exit_code, error_type, error_msg
+        else:
+            # Unknown error - retry with backoff
+            if delay > 0:
+                log(f"Claude error (attempt {attempt + 1}): {error_msg[:100]}. Retrying in {delay}s...")
+                time.sleep(delay)
+                continue
+            else:
+                return exit_code, error_type, error_msg
+
+    return exit_code, error_type, error_msg
+
 
 # --- Role triggers ---
 
@@ -782,7 +871,7 @@ def main(console: bool = False, daemon: bool = False) -> None:
 If this is a task request, add it to tasks.jsonl.
 If it's a question, answer it briefly.
 If it's feedback about the project, incorporate it appropriately."""
-                run_claude(prompt)
+                run_claude_with_retry(prompt)
                 continue
 
             # Check if project needs bootstrapping (idea defined but never started)
@@ -814,11 +903,13 @@ If it's feedback about the project, incorporate it appropriately."""
                 log("Task list empty. Verifying project completion...")
 
                 prompt = build_completion_check_prompt()
-                exit_code = run_claude(prompt)
+                exit_code, error_type, _ = run_claude_with_retry(prompt)
 
                 if exit_code != 0:
-                    log(f"Claude exited with code {exit_code}, retrying...")
-                    time.sleep(5)
+                    if error_type == ClaudeError.TOKEN_LIMIT:
+                        log("Cannot continue - out of tokens/credits")
+                        break
+                    # Other errors already retried by run_claude_with_retry
                     continue
 
                 # Check if new tasks were added
@@ -867,11 +958,13 @@ If it's feedback about the project, incorporate it appropriately."""
             prompt = build_prompt(task, mode, role, user_input)
 
             # Run Claude
-            exit_code = run_claude(prompt)
+            exit_code, error_type, _ = run_claude_with_retry(prompt)
 
             if exit_code != 0:
-                log(f"Claude exited with code {exit_code}, retrying...")
-                time.sleep(5)
+                if error_type == ClaudeError.TOKEN_LIMIT:
+                    log("Cannot continue - out of tokens/credits")
+                    break
+                # Other errors already retried by run_claude_with_retry
                 continue
 
             # Reload tasks and check status
